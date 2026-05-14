@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: see-music
+    env: node
+    plan: free
+    buildCommand: npm install && pip3 install --user yt-dlp
+    startCommand: npm run start
+    envVars:
+      - key: HOST
+        value: 0.0.0.0

@@ -1,0 +1,16 @@
+{
+  "name": "看见音乐",
+  "short_name": "看见音乐",
+  "description": "把声音实时翻译成可观看、可录制、可分享的视觉作品。",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
