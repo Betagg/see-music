@@ -67,6 +67,7 @@ const translations = {
     modeWireform: "线场雕塑",
     modePsyfluid: "迷幻流体",
     modeCrystal: "晶体星尘",
+    modeSkyChamber: "光域天窗",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -123,6 +124,7 @@ const translations = {
     modeWireform: "Wireform Sculpture",
     modePsyfluid: "Psy Fluid",
     modeCrystal: "Crystal Drift",
+    modeSkyChamber: "Sky Chamber",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -1286,6 +1288,110 @@ function drawCrystalDrift(width, height, features) {
   ctx.restore();
 }
 
+function drawSkyChamber(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const cx = width * 0.5;
+  const cy = height * 0.42;
+  const size = Math.min(width, height);
+  const slow = frame * 0.0035;
+  const breath = 0.5 + Math.sin(slow) * 0.5;
+  const apertureW = size * (0.44 + features.bass * 0.045 + features.beat * 0.018);
+  const apertureH = size * (0.23 + features.mid * 0.035 + features.beat * 0.012);
+  const hueA = currentTheme === "ember" ? 18 : currentTheme === "mono" ? 38 : 214;
+  const hueB = currentTheme === "ember" ? 326 : currentTheme === "mono" ? 54 : 286;
+  const hueC = currentTheme === "ember" ? 46 : currentTheme === "mono" ? 218 : 176;
+
+  ctx.save();
+
+  const room = ctx.createRadialGradient(cx, height * 0.7, size * 0.08, cx, height * 0.5, size * 0.9);
+  room.addColorStop(0, `hsla(${hueB}, 58%, ${22 + features.energy * 8}%, 1)`);
+  room.addColorStop(0.46, `hsla(${hueA}, 54%, ${10 + breath * 5}%, 1)`);
+  room.addColorStop(1, "rgba(2, 3, 8, 1)");
+  ctx.fillStyle = room;
+  ctx.fillRect(0, 0, width, height);
+
+  const wallDepth = 0.16 + features.energy * 0.08;
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.018 + features.mid * 0.028})`;
+  ctx.beginPath();
+  ctx.moveTo(width * 0.08, height);
+  ctx.lineTo(width * 0.28, height * 0.28);
+  ctx.lineTo(width * 0.72, height * 0.28);
+  ctx.lineTo(width * 0.92, height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalCompositeOperation = "lighter";
+  const sky = ctx.createRadialGradient(cx, cy, size * 0.02, cx, cy, apertureW * 0.74);
+  sky.addColorStop(0, `hsla(${hueC + features.treble * 36}, 100%, ${72 + features.mid * 12}%, ${0.78 + features.energy * 0.08})`);
+  sky.addColorStop(0.42, `hsla(${hueB + breath * 22}, 96%, ${58 + features.energy * 12}%, 0.64)`);
+  sky.addColorStop(0.78, `hsla(${hueA}, 95%, ${38 + breath * 10}%, 0.48)`);
+  sky.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sky;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, apertureW, apertureH, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const rimAlpha = 0.22 + features.treble * 0.2 + features.beat * 0.1;
+  for (let i = 0; i < 8; i += 1) {
+    const t = i / 7;
+    ctx.strokeStyle = `hsla(${hueC + t * 42}, 100%, ${68 + t * 12}%, ${rimAlpha * (1 - t * 0.68)})`;
+    ctx.lineWidth = 1.2 + t * 5 + features.beat * 3;
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      cy + t * size * 0.012,
+      apertureW * (1 + t * 0.025 + features.bass * 0.02),
+      apertureH * (1 + t * 0.04 + features.mid * 0.02),
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+  }
+
+  for (let ring = 0; ring < 7; ring += 1) {
+    const t = ring / 6;
+    const y = cy + apertureH * 1.2 + t * height * 0.38;
+    const half = apertureW * (1.15 + t * 0.9);
+    const alpha = 0.045 + (1 - t) * 0.08 + features.energy * 0.05;
+    ctx.strokeStyle = `hsla(${hueB + t * 28}, 96%, ${62 - t * 20}%, ${alpha})`;
+    ctx.lineWidth = 1.2 + features.mid * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - half, y);
+    ctx.quadraticCurveTo(cx, y + size * (0.035 + features.bass * 0.025), cx + half, y);
+    ctx.stroke();
+  }
+
+  const beam = ctx.createLinearGradient(cx, cy - apertureH, cx, height);
+  beam.addColorStop(0, `hsla(${hueC}, 100%, 76%, ${0.22 + features.energy * 0.16})`);
+  beam.addColorStop(0.45, `hsla(${hueB}, 100%, 66%, ${0.08 + features.mid * 0.1})`);
+  beam.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(cx - apertureW * (0.54 + features.bass * 0.12), cy + apertureH * 0.15);
+  ctx.bezierCurveTo(cx - apertureW * 0.42, height * 0.56, cx - width * wallDepth, height * 0.82, cx - width * 0.18, height);
+  ctx.lineTo(cx + width * 0.18, height);
+  ctx.bezierCurveTo(cx + width * wallDepth, height * 0.82, cx + apertureW * 0.42, height * 0.56, cx + apertureW * (0.54 + features.bass * 0.12), cy + apertureH * 0.15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalCompositeOperation = "screen";
+  for (let i = 0; i < 5; i += 1) {
+    const t = i / 4;
+    const drift = Math.sin(frame * 0.006 + i) * size * 0.012 * sensitivity;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.025 + features.treble * 0.04})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx + drift, cy + t * height * 0.09, apertureW * (0.72 + t * 0.4), apertureH * (0.2 + t * 0.16), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.16 - features.energy * 0.06})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
 function render() {
   frame += 1;
   const width = canvas.clientWidth;
@@ -1305,6 +1411,7 @@ function render() {
   if (currentMode === "wireform") drawWireformSculpture(width, height, features);
   if (currentMode === "psyfluid") drawPsyFluid(width, height, features);
   if (currentMode === "crystal") drawCrystalDrift(width, height, features);
+  if (currentMode === "skychamber") drawSkyChamber(width, height, features);
 
   requestAnimationFrame(render);
 }
