@@ -66,6 +66,7 @@ const translations = {
     modeVortex: "声波漩涡",
     modeWireform: "线场雕塑",
     modePsyfluid: "迷幻流体",
+    modeCrystal: "晶体星尘",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -121,6 +122,7 @@ const translations = {
     modeVortex: "Sonic Vortex",
     modeWireform: "Wireform Sculpture",
     modePsyfluid: "Psy Fluid",
+    modeCrystal: "Crystal Drift",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -179,6 +181,15 @@ const fluidSeeds = Array.from({ length: 56 }, (_, index) => ({
   radius: 0.08 + ((index * 37) % 100) / 100,
   phase: index * 0.39,
   size: 0.6 + ((index * 19) % 90) / 100,
+}));
+
+const crystalSeeds = Array.from({ length: 28 }, (_, index) => ({
+  x: (Math.sin(index * 42.71) * 0.5 + 0.5) % 1,
+  y: (Math.sin(index * 15.33 + 1.9) * 0.5 + 0.5) % 1,
+  z: 0.34 + (((index * 31) % 100) / 100) * 1.18,
+  sides: 7 + (index % 5),
+  hue: index % 3 === 0 ? 112 : index % 3 === 1 ? 286 : 186,
+  phase: index * 0.61,
 }));
 
 let audioContext;
@@ -1153,6 +1164,128 @@ function drawPsyFluid(width, height, features) {
   ctx.restore();
 }
 
+function drawCrystalDrift(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const cx = width * 0.52;
+  const cy = height * 0.46;
+  const size = Math.min(width, height);
+  const pulse = 0.55 + features.energy * 0.55 + features.beat * 0.35;
+
+  ctx.save();
+  const bg = ctx.createRadialGradient(cx, cy, size * 0.03, cx, cy, size * 0.95);
+  bg.addColorStop(0, `rgba(236, 220, 255, ${0.38 + features.mid * 0.18})`);
+  bg.addColorStop(0.34, `rgba(152, 105, 248, ${0.62 + features.energy * 0.08})`);
+  bg.addColorStop(0.7, "rgba(55, 37, 210, 0.86)");
+  bg.addColorStop(1, "rgba(8, 18, 118, 0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let ribbon = 0; ribbon < 5; ribbon += 1) {
+    const side = ribbon < 3 ? 1 : -1;
+    const baseX = side > 0 ? width * (0.78 + ribbon * 0.045) : width * (-0.04 + ribbon * 0.035);
+    const baseY = height * (0.12 + ribbon * 0.16);
+    ctx.beginPath();
+    for (let i = 0; i <= 180; i += 1) {
+      const t = i / 180;
+      const bin = Math.floor((t * 0.58 + ribbon * 0.06) * frequencyData.length);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.18;
+      const wave = Math.sin(t * Math.PI * (2.5 + ribbon * 0.4) + frame * 0.018 + ribbon) * size * 0.12 * (0.32 + amp * sensitivity);
+      const sweep = Math.cos(t * Math.PI * 1.6 - frame * 0.01) * size * 0.04 * features.mid;
+      const x = baseX + side * (-t * width * 0.56 + wave * 0.48);
+      const y = baseY + t * height * 0.88 + wave + sweep;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(150, 255, 153, ${0.1 + features.mid * 0.2})`;
+    ctx.lineWidth = size * (0.03 + ribbon * 0.006 + features.bass * 0.018);
+    ctx.lineCap = "round";
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(239, 255, 206, ${0.22 + features.treble * 0.26})`;
+    ctx.lineWidth = 1.2 + features.beat * 2.2;
+    ctx.stroke();
+  }
+
+  for (const seed of crystalSeeds) {
+    const parallax = 1 / seed.z;
+    const driftX = Math.sin(frame * 0.006 + seed.phase) * size * 0.05 * parallax;
+    const driftY = Math.cos(frame * 0.004 + seed.phase * 1.7) * size * 0.035 * parallax;
+    const x = width * seed.x + driftX + Math.sin(frame * 0.002 + seed.phase) * width * 0.06;
+    const y = height * seed.y + driftY;
+    const bin = Math.floor(seed.x * frequencyData.length * 0.72);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.25;
+    const radius = size * (0.016 + seed.z * 0.018 + amp * 0.05 + features.beat * 0.015);
+    const alpha = 0.18 + amp * 0.44 + (1 / seed.z) * 0.12;
+    const hue = seed.hue + features.treble * 36;
+
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3.8);
+    glow.addColorStop(0, `hsla(${hue}, 100%, 74%, ${alpha * 0.5})`);
+    glow.addColorStop(0.48, `hsla(${hue + 38}, 100%, 58%, ${alpha * 0.18})`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(frame * (0.006 + seed.z * 0.001) + seed.phase + amp);
+    ctx.scale(1.08 + amp * 0.16, 0.82 + features.mid * 0.18);
+    ctx.beginPath();
+    for (let i = 0; i < seed.sides; i += 1) {
+      const angle = (i / seed.sides) * Math.PI * 2;
+      const facet = 0.8 + Math.sin(i * 2.1 + frame * 0.02 + seed.phase) * 0.18;
+      const px = Math.cos(angle) * radius * facet;
+      const py = Math.sin(angle) * radius * facet;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = `hsla(${hue}, 88%, ${58 + amp * 20}%, ${0.16 + alpha * 0.5})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(246, 255, 230, ${0.34 + amp * 0.34})`;
+    ctx.lineWidth = 1 + features.treble * 2;
+    ctx.stroke();
+
+    for (let facet = 0; facet < seed.sides; facet += 2) {
+      const angle = (facet / seed.sides) * Math.PI * 2 + Math.sin(frame * 0.01 + seed.phase) * 0.18;
+      ctx.strokeStyle = `rgba(255, 236, 255, ${0.18 + amp * 0.32})`;
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(angle) * radius * 0.84, Math.sin(angle) * radius * 0.84);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  for (let i = 0; i < 160; i += 1) {
+    const seed = starSeeds[i % starSeeds.length];
+    const orbit = (frame * 0.002 + seed.phase) % (Math.PI * 2);
+    const x = (seed.x * width + Math.sin(orbit) * width * 0.12 + width) % width;
+    const y = (seed.y * height + Math.cos(orbit * 0.7) * height * 0.09 + height) % height;
+    const bin = Math.floor(seed.x * frequencyData.length * 0.65);
+    const amp = (frequencyData[bin] || 0) / 255;
+    const dot = 1.2 + seed.size * 1.1 + amp * 5.5 * sensitivity;
+    ctx.fillStyle = `rgba(255, ${220 + amp * 35}, ${130 + amp * 110}, ${0.12 + amp * 0.5 + features.treble * 0.18})`;
+    ctx.beginPath();
+    ctx.arc(x, y, dot, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.62);
+  wash.addColorStop(0, `rgba(255, 245, 255, ${0.08 + pulse * 0.08})`);
+  wash.addColorStop(0.62, `rgba(155, 112, 255, ${0.04 + features.energy * 0.08})`);
+  wash.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+}
+
 function render() {
   frame += 1;
   const width = canvas.clientWidth;
@@ -1171,6 +1304,7 @@ function render() {
   if (currentMode === "vortex") drawSonicVortex(width, height, features);
   if (currentMode === "wireform") drawWireformSculpture(width, height, features);
   if (currentMode === "psyfluid") drawPsyFluid(width, height, features);
+  if (currentMode === "crystal") drawCrystalDrift(width, height, features);
 
   requestAnimationFrame(render);
 }
