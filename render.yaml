@@ -3,7 +3,7 @@ services:
     name: see-music
     env: node
     plan: free
-    buildCommand: npm install && (python3 -m pip install --user yt-dlp || true)
+    buildCommand: npm install
     startCommand: npm run start
     envVars:
       - key: HOST
