@@ -64,6 +64,8 @@ const translations = {
     modeLaser: "激光厅",
     modeScanner: "光环扫描",
     modeVortex: "声波漩涡",
+    modeWireform: "线场雕塑",
+    modePsyfluid: "迷幻流体",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -116,6 +118,8 @@ const translations = {
     modeLaser: "Laser Cathedral",
     modeScanner: "Light Scanner",
     modeVortex: "Sonic Vortex",
+    modeWireform: "Wireform Sculpture",
+    modePsyfluid: "Psy Fluid",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -166,6 +170,13 @@ const laserSeeds = Array.from({ length: 34 }, (_, index) => ({
   lane: (index * 7) % 11,
   phase: index * 0.47,
   depth: 0.18 + ((index * 13) % 80) / 100,
+}));
+
+const fluidSeeds = Array.from({ length: 56 }, (_, index) => ({
+  angle: index * 2.399963,
+  radius: 0.08 + ((index * 37) % 100) / 100,
+  phase: index * 0.39,
+  size: 0.6 + ((index * 19) % 90) / 100,
 }));
 
 let audioContext;
@@ -980,6 +991,166 @@ function drawSonicVortex(width, height, features) {
   ctx.restore();
 }
 
+function drawWireformSculpture(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const cx = width * 0.5;
+  const cy = height * 0.48;
+  const size = Math.min(width, height);
+  const sculptureRadius = size * (0.13 + features.bass * 0.06);
+
+  ctx.save();
+  ctx.fillStyle = `rgba(2, 3, 5, ${0.92 - features.energy * 0.18})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = "lighter";
+
+  const scanAlpha = 0.06 + features.treble * 0.12;
+  ctx.strokeStyle = `rgba(255, 255, 255, ${scanAlpha})`;
+  ctx.lineWidth = 1;
+  for (let y = height * 0.18; y < height * 0.78; y += 13) {
+    const drift = Math.sin(y * 0.03 + frame * 0.028) * features.mid * 38;
+    ctx.beginPath();
+    ctx.moveTo(width * 0.18, y + drift);
+    ctx.lineTo(width * 0.82, y - drift * 0.42);
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.sin(frame * 0.006) * 0.24 + features.beat * 0.12);
+
+  for (let layer = 0; layer < 5; layer += 1) {
+    const z = 1 + layer * 0.2;
+    const phase = frame * (0.01 + layer * 0.002);
+    ctx.beginPath();
+    for (let i = 0; i <= 220; i += 1) {
+      const t = i / 220;
+      const angle = t * Math.PI * 2;
+      const bin = Math.floor(t * frequencyData.length * 0.7);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.15;
+      const folded = Math.sin(angle * (3 + layer) + phase) * sculptureRadius * 0.32 * (0.2 + amp * sensitivity);
+      const twist = Math.cos(angle * 2 - phase * 0.8) * sculptureRadius * 0.22 * features.mid;
+      const r = sculptureRadius * z + folded + twist;
+      const x = Math.cos(angle + phase * 0.18) * r * (1.35 - layer * 0.06);
+      const y = Math.sin(angle - phase * 0.13) * r * (0.72 + layer * 0.04);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.12 + layer * 0.06 + features.energy * 0.22})`;
+    ctx.lineWidth = 0.8 + layer * 0.35 + features.beat * 1.4;
+    ctx.stroke();
+  }
+
+  for (let slice = -6; slice <= 6; slice += 1) {
+    const y = slice * sculptureRadius * 0.19 + Math.sin(frame * 0.018 + slice) * features.mid * 22;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + Math.abs(slice) * 0.012 + features.treble * 0.18})`;
+    ctx.lineWidth = 1 + features.beat;
+    ctx.beginPath();
+    for (let i = 0; i <= 96; i += 1) {
+      const t = i / 96;
+      const x = (t - 0.5) * sculptureRadius * 3.2;
+      const bin = Math.floor(t * frequencyData.length * 0.48);
+      const amp = (frequencyData[bin] || 0) / 255;
+      const yy = y + Math.sin(t * Math.PI * 5 + frame * 0.025 + slice) * amp * 44 * sensitivity;
+      if (i === 0) ctx.moveTo(x, yy);
+      else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  const panelX = width * 0.5;
+  const panelY = height * 0.5;
+  const glow = ctx.createRadialGradient(panelX, panelY, 0, panelX, panelY, size * 0.52);
+  glow.addColorStop(0, `rgba(255,255,255,${0.04 + features.energy * 0.1})`);
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
+
+  drawPerformanceSilhouette(width, height, 0.7);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+}
+
+function drawPsyFluid(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const cx = width * 0.5;
+  const cy = height * 0.48;
+  const size = Math.min(width, height);
+  const baseHue = currentTheme === "mono" ? 318 : currentTheme === "ember" ? 344 : 286;
+  const secondHue = currentTheme === "ember" ? 18 : 212;
+
+  ctx.save();
+  const bg = ctx.createRadialGradient(cx, cy, size * 0.04, cx, cy, size * 0.82);
+  bg.addColorStop(0, `hsla(${baseHue}, 70%, 13%, 0.9)`);
+  bg.addColorStop(0.42, `hsla(${secondHue}, 72%, 10%, 0.94)`);
+  bg.addColorStop(1, "rgba(3, 2, 8, 0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let band = 0; band < 24; band += 1) {
+    const depth = band / 23;
+    const radius = size * (0.08 + depth * 0.52 + features.bass * 0.04);
+    ctx.beginPath();
+    for (let i = 0; i <= 160; i += 1) {
+      const t = i / 160;
+      const angle = t * Math.PI * 2 + frame * (0.006 + depth * 0.012);
+      const bin = Math.floor(t * frequencyData.length * 0.62);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.12;
+      const ripple = Math.sin(angle * 4 + frame * 0.028 + band) * size * 0.035 * (features.mid + amp) * sensitivity;
+      const tissue = Math.sin(angle * 9 - frame * 0.014) * size * 0.015 * (0.3 + features.treble);
+      const r = radius + ripple + tissue;
+      const x = cx + Math.cos(angle + depth * 2.2) * r * (1.15 + depth * 0.08);
+      const y = cy + Math.sin(angle - depth * 1.7) * r * (0.78 + depth * 0.12);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    const hue = baseHue + depth * 86 + features.treble * 40;
+    ctx.strokeStyle = `hsla(${hue}, 92%, ${48 + depth * 18}%, ${0.06 + (1 - depth) * 0.14 + features.energy * 0.14})`;
+    ctx.lineWidth = 1.1 + features.beat * 1.8 + depth * 1.4;
+    ctx.stroke();
+  }
+
+  for (const seed of fluidSeeds) {
+    const bin = Math.floor(seed.radius * frequencyData.length * 0.55);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.2;
+    const angle = seed.angle + frame * 0.009 * (0.7 + seed.size) + amp * 0.65;
+    const radius = size * seed.radius * (0.12 + amp * 0.55 + features.energy * 0.28);
+    const x = cx + Math.cos(angle) * radius * 1.45;
+    const y = cy + Math.sin(angle) * radius * 0.95;
+    const blob = size * (0.025 + seed.size * 0.025 + amp * 0.07);
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, blob * 2.8);
+    grad.addColorStop(0, `hsla(${baseHue + seed.phase * 50}, 100%, 68%, ${0.12 + amp * 0.34})`);
+    grad.addColorStop(0.45, `hsla(${secondHue + amp * 80}, 100%, 58%, ${0.08 + amp * 0.2})`);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, blob * (1.2 + amp), blob * (0.62 + features.mid), angle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const eyeRadius = size * (0.055 + features.bass * 0.04 + features.beat * 0.03);
+  const eye = ctx.createRadialGradient(cx, cy, eyeRadius * 0.12, cx, cy, eyeRadius * 3.2);
+  eye.addColorStop(0, "rgba(0,0,0,0.95)");
+  eye.addColorStop(0.34, `hsla(${secondHue}, 100%, 62%, ${0.2 + features.energy * 0.25})`);
+  eye.addColorStop(0.58, `hsla(${baseHue}, 100%, 56%, ${0.1 + features.mid * 0.22})`);
+  eye.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = eye;
+  ctx.beginPath();
+  ctx.arc(cx, cy, eyeRadius * 3.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.88)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, eyeRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawPerformanceSilhouette(width, height, 0.45);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+}
+
 function render() {
   frame += 1;
   const width = canvas.clientWidth;
@@ -996,6 +1167,8 @@ function render() {
   if (currentMode === "laser") drawLaserCathedral(width, height, features);
   if (currentMode === "scanner") drawLightScanner(width, height, features);
   if (currentMode === "vortex") drawSonicVortex(width, height, features);
+  if (currentMode === "wireform") drawWireformSculpture(width, height, features);
+  if (currentMode === "psyfluid") drawPsyFluid(width, height, features);
 
   requestAnimationFrame(render);
 }
