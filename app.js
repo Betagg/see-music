@@ -85,6 +85,7 @@ const translations = {
     badUrl: "链接格式不正确。",
     resolving: "正在解析视频里的音频流。",
     serviceMissing: "本地解析服务未启动。请在项目目录运行 npm run start。",
+    staticResolverUnavailable: "公开视频页暂不支持平台链接解析。请上传本地音频，或在电脑上运行 npm run start 后打开本地版。",
     resolveFailed: "视频链接解析失败。",
     resolved: "视频音频已解析，点击播放器开始。",
     directLoaded: "已读取音频链接，点击播放器开始。若无声音，通常是链接跨域限制。",
@@ -139,6 +140,7 @@ const translations = {
     badUrl: "Invalid link.",
     resolving: "Resolving audio from the video link.",
     serviceMissing: "Local resolver is not running. Run npm run start in the project folder.",
+    staticResolverUnavailable: "The public static site cannot resolve platform links. Upload local audio, or run npm run start and open the local app.",
     resolveFailed: "Could not resolve this video link.",
     resolved: "Video audio resolved. Press play to begin.",
     directLoaded: "Audio link loaded. Press play to begin. If it stays silent, the link is likely blocked by CORS.",
@@ -1213,11 +1215,21 @@ function looksLikeDirectAudioUrl(url) {
 }
 
 function apiBaseUrl() {
+  if (window.SEE_MUSIC_API_BASE) return window.SEE_MUSIC_API_BASE;
   if (location.protocol === "http:" || location.protocol === "https:") return location.origin;
   return "http://localhost:4177";
 }
 
+function isStaticHostedPage() {
+  return /(?:^|\.)github\.io$/i.test(location.hostname);
+}
+
 async function loadVideoPageUrl(pageUrl) {
+  if (isStaticHostedPage() && apiBaseUrl() === location.origin) {
+    setStatus("staticResolverUnavailable");
+    return;
+  }
+
   const endpoint = `${apiBaseUrl()}/api/resolve?url=${encodeURIComponent(pageUrl)}`;
   setStatus("resolving");
 
