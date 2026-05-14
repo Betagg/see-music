@@ -74,13 +74,21 @@ audio {
 
 .status-text {
   max-width: min(48vw, 560px);
-  margin: 0;
+  margin: 0 0 0 auto;
   color: rgba(247, 250, 252, 0.64);
   font-size: 13px;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  pointer-events: auto;
 }
 
 .language-button,
@@ -98,7 +106,14 @@ audio {
   padding: 0 14px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
-  pointer-events: auto;
+}
+
+.language-button {
+  min-width: 42px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .stage {
