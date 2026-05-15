@@ -64,6 +64,10 @@ const translations = {
     modeSkyChamber: "光域天窗",
     modeBoiling: "沸点字浪",
     modeTypeFlow: "字浪流体",
+    modeCanyon: "声纹峡谷",
+    modeEmotionRing: "情绪文字环",
+    modeMeditation: "冥想光场",
+    modeAnamorphic: "空间字阵",
     modeErosion: "侵蚀流域",
     modeSeascape: "海面光景",
     modeSunWater: "柔浪日海",
@@ -133,6 +137,10 @@ const translations = {
     modeSkyChamber: "Sky Chamber",
     modeBoiling: "Boiling Type",
     modeTypeFlow: "Type Tide",
+    modeCanyon: "Sonic Canyon",
+    modeEmotionRing: "Emotion Ring",
+    modeMeditation: "Meditation Field",
+    modeAnamorphic: "Spatial Type",
     modeErosion: "Erosion Flow",
     modeSeascape: "Sea Light",
     modeSunWater: "Sunlit Water",
@@ -225,6 +233,25 @@ const typeFlowDust = Array.from({ length: 150 }, (_, index) => ({
   y: (Math.sin(index * 91.17 + 1.7) * 0.5 + 0.5) % 1,
   size: 0.45 + ((index * 19) % 13) / 8,
   phase: index * 0.57,
+}));
+const canyonSeeds = Array.from({ length: 70 }, (_, index) => ({
+  x: (Math.sin(index * 24.37) * 0.5 + 0.5) % 1,
+  bend: Math.sin(index * 0.73),
+  phase: index * 0.41,
+  width: 0.55 + ((index * 17) % 100) / 130,
+}));
+const emotionWords = ["看见", "流动", "呼吸", "低频", "光", "回声", "心跳", "温度", "漂浮", "旋律", "Beauty", "Pulse", "Echo", "Dream"];
+const emotionDust = Array.from({ length: 130 }, (_, index) => ({
+  angle: index * 2.399963,
+  radius: 0.24 + ((index * 31) % 100) / 160,
+  phase: index * 0.49,
+  size: 0.5 + ((index * 23) % 11) / 8,
+}));
+const meditationDust = Array.from({ length: 96 }, (_, index) => ({
+  x: (Math.sin(index * 66.7) * 0.5 + 0.5) % 1,
+  y: (Math.sin(index * 18.3 + 2.2) * 0.5 + 0.5) % 1,
+  phase: index * 0.37,
+  size: 0.5 + ((index * 29) % 17) / 10,
 }));
 
 let audioContext;
@@ -366,6 +393,50 @@ const modeTuningConfigs = {
     { key: "speed", zh: "漂浮速度", en: "Float Speed", min: 0.2, max: 2.4, step: 0.05 },
     { key: "vibration", zh: "字浪律动", en: "Type Tide", min: 0, max: 2.4, step: 0.05 },
     { key: "hue", zh: "文字色相", en: "Type Hue", min: -180, max: 180, step: 5 },
+  ],
+  canyon: [
+    { key: "size", zh: "峡谷尺度", en: "Canyon Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "等高线密度", en: "Contour Density", min: 0.4, max: 2.2, step: 0.05 },
+    { key: "line", zh: "河谷线宽", en: "River Width", min: 0.4, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "岩层渐变", en: "Strata Gradient", min: 0.4, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "矿物色彩", en: "Mineral Color", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "sharpness", zh: "切割锐度", en: "Cut Sharpness", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "speed", zh: "水道速度", en: "Water Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "低频侵蚀", en: "Bass Erosion", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "地貌色相", en: "Terrain Hue", min: -180, max: 180, step: 5 },
+  ],
+  emotionring: [
+    { key: "size", zh: "文字环半径", en: "Word Ring", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "词语密度", en: "Word Density", min: 0.4, max: 2.2, step: 0.05 },
+    { key: "line", zh: "文字描边", en: "Text Outline", min: 0.4, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "情绪渐变", en: "Emotion Gradient", min: 0.4, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "词云色彩", en: "Word Color", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "sharpness", zh: "粒子锐度", en: "Particle Sharpness", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "speed", zh: "旋转速度", en: "Orbit Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "情绪脉冲", en: "Emotion Pulse", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "情绪色相", en: "Emotion Hue", min: -180, max: 180, step: 5 },
+  ],
+  meditation: [
+    { key: "size", zh: "光场尺度", en: "Field Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "光层数量", en: "Light Layers", min: 0.35, max: 2.2, step: 0.05 },
+    { key: "line", zh: "边缘光宽", en: "Rim Width", min: 0.35, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "空间渐变", en: "Space Gradient", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "光色浓度", en: "Light Color", min: 0.25, max: 1.8, step: 0.05 },
+    { key: "sharpness", zh: "柔焦边缘", en: "Soft Edge", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "speed", zh: "呼吸速度", en: "Breath Speed", min: 0.2, max: 2.2, step: 0.05 },
+    { key: "vibration", zh: "呼吸幅度", en: "Breath Depth", min: 0, max: 2.2, step: 0.05 },
+    { key: "hue", zh: "光场色相", en: "Field Hue", min: -180, max: 180, step: 5 },
+  ],
+  anamorphic: [
+    { key: "size", zh: "字阵尺度", en: "Type Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "空间切片", en: "Depth Slices", min: 0.35, max: 2.2, step: 0.05 },
+    { key: "line", zh: "线框粗细", en: "Wire Width", min: 0.35, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "透视渐变", en: "Perspective Gradient", min: 0.4, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "字阵色彩", en: "Type Color", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "sharpness", zh: "空间锐度", en: "Depth Sharpness", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "speed", zh: "视角速度", en: "View Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "透视律动", en: "Perspective Pulse", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "标题色相", en: "Title Hue", min: -180, max: 180, step: 5 },
   ],
   erosion: [
     { key: "size", zh: "地形尺度", en: "Terrain Scale", min: 0.65, max: 1.7, step: 0.05 },
@@ -3334,6 +3405,244 @@ function drawTypeFlow(width, height, features) {
   ctx.restore();
 }
 
+function visualPhraseWords() {
+  const input = visualTextInput?.value.trim();
+  const phrase = input || t("defaultVisualText");
+  const parts = phrase.split(/\s+/).filter(Boolean);
+  if (parts.length > 1) return parts.slice(0, 12);
+  const chars = Array.from(phrase).filter((char) => char.trim());
+  return chars.length > 1 ? chars.slice(0, 18) : emotionWords;
+}
+
+function drawSonicCanyon(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const theme = tunedTheme();
+  const size = Math.min(width, height);
+  const cx = width * 0.5;
+  const horizon = height * 0.38;
+  const hueA = theme.base + visualTuning.hue;
+  const hueB = theme.second + visualTuning.hue * 0.35;
+  const erosion = (features.bass * 0.9 + features.beat * 0.45) * sensitivity;
+  const strataCount = Math.round(34 * visualTuning.density);
+
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, height);
+  sky.addColorStop(0, `hsla(${hueB + 20}, 80%, ${8 + features.mid * 8}%, 1)`);
+  sky.addColorStop(0.42, `hsla(${hueA + 180}, 72%, ${7 + features.energy * 7}%, 1)`);
+  sky.addColorStop(1, `hsla(${hueA}, 92%, 4%, 1)`);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  const glow = ctx.createRadialGradient(cx, horizon + size * 0.18, 0, cx, horizon + size * 0.18, size * 0.72);
+  glow.addColorStop(0, `hsla(${hueA + 35}, 100%, 62%, ${0.13 + features.bass * 0.1})`);
+  glow.addColorStop(0.5, `hsla(${hueB}, 100%, 42%, ${0.055 + features.mid * 0.08})`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "screen";
+  for (let layer = 0; layer < strataCount; layer += 1) {
+    const depth = layer / Math.max(1, strataCount - 1);
+    const y = horizon + depth * height * 0.64;
+    const valleyWidth = width * (0.08 + depth * (0.34 + erosion * 0.08));
+    const cut = Math.pow(depth, 1.55) * size * (0.1 + erosion * 0.18);
+    ctx.beginPath();
+    for (let i = 0; i <= 150; i += 1) {
+      const t = i / 150;
+      const x = t * width;
+      const n = Math.sin(t * 11.0 + depth * 6.0 + frame * 0.006 * visualTuning.speed) * size * 0.012;
+      const d = Math.abs(x - cx) / Math.max(1, valleyWidth);
+      const canyon = Math.exp(-d * d * (1.5 + visualTuning.sharpness)) * cut;
+      const freqAmp = ((frequencyData[Math.floor(t * frequencyData.length * 0.64)] || 0) / 255) ** 1.3;
+      const yy = y + n - canyon + freqAmp * size * 0.03 * depth * sensitivity;
+      if (i === 0) ctx.moveTo(x, yy);
+      else ctx.lineTo(x, yy);
+    }
+    ctx.strokeStyle = `hsla(${hueA + depth * 84}, 88%, ${45 + depth * 24}%, ${0.055 + depth * 0.15})`;
+    ctx.lineWidth = (0.7 + depth * 1.7 + features.beat * 1.2) * visualTuning.line;
+    ctx.stroke();
+  }
+
+  for (let r = 0; r < 8; r += 1) {
+    ctx.beginPath();
+    const depth = r / 7;
+    for (let i = 0; i <= 100; i += 1) {
+      const t = i / 100;
+      const seed = canyonSeeds[(i + r * 9) % canyonSeeds.length];
+      const y = horizon + t * height * 0.6;
+      const sway = Math.sin(t * 8 + frame * 0.025 * visualTuning.speed + seed.phase) * size * 0.018;
+      const x = cx + Math.sin(t * 5.2 + r) * width * (0.02 + depth * 0.03) + sway;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `hsla(${hueB + 30}, 100%, ${58 + features.treble * 18}%, ${0.18 + features.bass * 0.18})`;
+    ctx.lineWidth = (1.2 + r * 0.25 + features.bass * 3) * visualTuning.line;
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.16 - features.energy * 0.04})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+function drawEmotionRing(width, height, features) {
+  const theme = tunedTheme();
+  const size = Math.min(width, height);
+  const cx = width * 0.5;
+  const cy = height * 0.5;
+  const words = visualPhraseWords();
+  const count = Math.max(8, Math.round(words.length * visualTuning.density));
+  const radius = size * (0.25 + visualTuning.size * 0.08 + features.bass * 0.08);
+  const hueA = theme.base + visualTuning.hue;
+  const hueB = theme.second + visualTuning.hue * 0.4;
+
+  ctx.save();
+  const bg = ctx.createRadialGradient(cx, cy, size * 0.05, cx, cy, size * 0.78);
+  bg.addColorStop(0, `hsla(${hueA}, 78%, ${10 + features.energy * 10}%, 1)`);
+  bg.addColorStop(0.52, `hsla(${hueB + 190}, 72%, 7%, 1)`);
+  bg.addColorStop(1, "rgba(0,0,0,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "screen";
+  for (const dust of emotionDust) {
+    const pulse = 1 + features.beat * 0.18 + Math.sin(frame * 0.012 + dust.phase) * 0.03;
+    const x = cx + Math.cos(dust.angle + frame * 0.002 * visualTuning.speed) * radius * dust.radius * 2.0 * pulse;
+    const y = cy + Math.sin(dust.angle + frame * 0.002 * visualTuning.speed) * radius * dust.radius * 2.0 * pulse;
+    ctx.fillStyle = `hsla(${hueA + dust.phase * 20}, 96%, 72%, ${0.035 + features.treble * 0.12})`;
+    ctx.beginPath();
+    ctx.arc(x, y, dust.size * visualTuning.sharpness, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i < count; i += 1) {
+    const word = words[i % words.length];
+    const angle = (Math.PI * 2 * i) / count + frame * 0.004 * visualTuning.speed;
+    const bin = Math.floor((i / count) * frequencyData.length * 0.7);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.1;
+    const r = radius + amp * size * 0.09 + Math.sin(frame * 0.015 + i) * features.mid * size * 0.025;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    const fontSize = Math.max(13, size * (0.024 + amp * 0.018) * visualTuning.size);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.font = `800 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    ctx.lineWidth = (0.8 + amp * 1.8) * visualTuning.line;
+    ctx.strokeStyle = `rgba(255,255,255,${0.12 + amp * 0.18})`;
+    ctx.fillStyle = `hsla(${hueA + i * 13 + amp * 60}, 96%, ${62 + amp * 22}%, ${0.55 + amp * 0.36})`;
+    ctx.strokeText(word, 0, 0);
+    ctx.fillText(word, 0, 0);
+    ctx.restore();
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * (0.48 + features.bass * 0.08), 0, Math.PI * 2);
+  ctx.strokeStyle = `hsla(${hueB}, 100%, 72%, ${0.14 + features.energy * 0.18})`;
+  ctx.lineWidth = (2 + features.beat * 3) * visualTuning.line;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMeditationField(width, height, features) {
+  const theme = tunedTheme();
+  const size = Math.min(width, height);
+  const cx = width * 0.5;
+  const cy = height * 0.48;
+  const hueA = theme.base + visualTuning.hue;
+  const hueB = theme.second + visualTuning.hue * 0.35;
+  const breath = Math.sin(frame * 0.012 * visualTuning.speed) * 0.5 + 0.5;
+
+  ctx.save();
+  const bg = ctx.createRadialGradient(cx, cy, size * 0.08, cx, cy, size * 0.86);
+  bg.addColorStop(0, `hsla(${hueA + 36}, ${55 * visualTuning.saturation}%, ${42 + breath * 8 + features.mid * 8}%, 1)`);
+  bg.addColorStop(0.46, `hsla(${hueB}, ${70 * visualTuning.saturation}%, ${18 + features.energy * 9}%, 1)`);
+  bg.addColorStop(1, `hsla(${hueA + 210}, 62%, 5%, 1)`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "screen";
+  const layers = Math.round(9 + visualTuning.density * 9);
+  for (let i = 0; i < layers; i += 1) {
+    const t = i / Math.max(1, layers - 1);
+    const pulse = 1 + (breath - 0.5) * 0.1 * visualTuning.vibration + features.bass * 0.05;
+    const rx = size * (0.18 + t * 0.52) * pulse * visualTuning.size;
+    const ry = size * (0.08 + t * 0.24) * pulse;
+    ctx.strokeStyle = `hsla(${hueA + t * 80}, 92%, ${70 - t * 22}%, ${0.06 + (1 - t) * 0.08})`;
+    ctx.lineWidth = (1 + (1 - t) * 2.2 + features.treble * 1.1) * visualTuning.line;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + size * (0.04 + t * 0.04), rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  for (const dust of meditationDust) {
+    const x = dust.x * width + Math.sin(frame * 0.004 + dust.phase) * size * 0.014;
+    const y = dust.y * height + Math.cos(frame * 0.005 + dust.phase) * size * 0.014;
+    ctx.fillStyle = `rgba(255,255,255,${0.025 + features.treble * 0.075})`;
+    ctx.beginPath();
+    ctx.arc(x, y, dust.size * visualTuning.sharpness, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAnamorphicType(width, height, features) {
+  const theme = tunedTheme();
+  const size = Math.min(width, height);
+  const text = (visualTextInput?.value.trim() || t("defaultVisualText")).slice(0, 18);
+  const cx = width * 0.5;
+  const cy = height * 0.48;
+  const hueA = theme.base + visualTuning.hue;
+  const hueB = theme.second + visualTuning.hue * 0.4;
+  const slices = Math.round(14 + visualTuning.density * 18);
+  const baseFont = Math.min(112, Math.max(34, width / Math.max(7, Array.from(text).length * 0.75)));
+
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, `hsla(${hueA + 210}, 74%, 5%, 1)`);
+  bg.addColorStop(0.5, `hsla(${hueB}, 74%, ${8 + features.mid * 8}%, 1)`);
+  bg.addColorStop(1, "rgba(0,0,0,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.globalCompositeOperation = "screen";
+  for (let i = slices; i >= 0; i -= 1) {
+    const depth = i / Math.max(1, slices);
+    const z = 1 - depth;
+    const scale = (0.32 + z * 0.95) * visualTuning.size;
+    const y = cy + (depth - 0.45) * size * 0.52 + Math.sin(frame * 0.012 * visualTuning.speed + i) * features.mid * size * 0.025;
+    const x = cx + Math.sin(frame * 0.006 * visualTuning.speed + depth * 4.0) * size * (0.05 + features.bass * 0.05);
+    const skew = (depth - 0.5) * (0.62 + features.bass * 0.2);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.transform(scale, 0.05 * features.mid, skew * 0.18, scale * (0.38 + depth * 0.55), 0, 0);
+    ctx.font = `900 ${baseFont}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    ctx.lineWidth = (1 + depth * 2.4) * visualTuning.line;
+    ctx.strokeStyle = `hsla(${hueA + depth * 90}, 100%, ${62 + depth * 18}%, ${0.07 + z * 0.2})`;
+    ctx.fillStyle = `hsla(${hueB + depth * 50}, 96%, ${50 + z * 32}%, ${0.08 + z * 0.34})`;
+    ctx.strokeText(text, 0, 0);
+    if (i % 2 === 0 || depth > 0.72) ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  const gridLines = Math.round(8 + visualTuning.density * 8);
+  for (let i = 0; i < gridLines; i += 1) {
+    const t = i / Math.max(1, gridLines - 1);
+    ctx.strokeStyle = `hsla(${hueA + 30}, 96%, 68%, ${0.035 + features.treble * 0.045})`;
+    ctx.lineWidth = visualTuning.line;
+    ctx.beginPath();
+    ctx.moveTo(width * (0.18 + t * 0.64), height);
+    ctx.lineTo(cx + (t - 0.5) * size * 0.18, height * 0.18);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function render() {
   frame += visualTuning.speed;
   const width = canvas.clientWidth;
@@ -3370,6 +3679,10 @@ function render() {
   if (currentMode === "skychamber") drawSkyChamber(width, height, features);
   if (currentMode === "boiling") drawBoilingType(width, height, features);
   if (currentMode === "typeflow") drawTypeFlow(width, height, features);
+  if (currentMode === "canyon") drawSonicCanyon(width, height, features);
+  if (currentMode === "emotionring") drawEmotionRing(width, height, features);
+  if (currentMode === "meditation") drawMeditationField(width, height, features);
+  if (currentMode === "anamorphic") drawAnamorphicType(width, height, features);
 
   ctx.restore();
   ctx.filter = "none";
