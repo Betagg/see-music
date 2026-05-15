@@ -440,7 +440,7 @@ function tunedFeatures(features) {
     mid: Math.min(1.6, features.mid * vibration),
     treble: Math.min(1.6, features.treble * vibration),
     energy: Math.min(1.6, features.energy * (0.65 + vibration * 0.35)),
-    beat: Math.min(1.8, features.beat * (0.5 + vibration * 0.55)),
+    beat: Math.min(1.8, features.beat * (0.5 + vibration * 0.5)),
   };
 }
 
@@ -567,10 +567,8 @@ function clearStage(width, height, features) {
 
 const erosionVertexShader = `
 attribute vec2 a_position;
-varying vec2 v_uv;
 
 void main() {
-  v_uv = a_position * 0.5 + 0.5;
   gl_Position = vec4(a_position, 0.0, 1.0);
 }
 `;
@@ -586,15 +584,12 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_beat;
 uniform vec3 u_theme;
-uniform sampler2D u_previous;
-uniform float u_feedback;
 uniform float u_scale;
 uniform float u_density;
 uniform float u_gradient;
 uniform float u_saturation;
 uniform float u_sharpness;
 uniform float u_line;
-varying vec2 v_uv;
 
 float hash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -678,55 +673,30 @@ void main() {
   float shade = clamp(dot(n, light), 0.0, 1.0);
   float channels = channelMask(p);
   float pulse = terrainPulse();
-  float contours = 1.0 - smoothstep(0.0, (0.046 + u_mid * 0.02) / max(u_line, 0.2), abs(fract(h * (5.5 + u_density * 2.0 + pulse * 5.0)) - 0.5));
-  float sediment = fbm(p * (5.8 + u_density * 1.7 + pulse * 2.0) + vec2(sin(u_time * 0.24), cos(u_time * 0.18)) * 0.18);
+  float contours = 1.0 - smoothstep(0.0, (0.04 + u_mid * 0.02) / max(u_line, 0.2), abs(fract(h * (7.0 * u_density + pulse * 5.0)) - 0.5));
+  float sediment = fbm(p * ((7.5 + pulse * 2.0) * u_density) + vec2(sin(u_time * 0.24), cos(u_time * 0.18)) * 0.18);
   float grain = hash(gl_FragCoord.xy + floor(u_time * 30.0)) - 0.5;
 
   vec3 deep = hsv2rgb(vec3(u_theme.x + 0.48 * u_gradient, 0.72, 0.08 + u_energy * 0.05));
-  vec3 silt = hsv2rgb(vec3(u_theme.y, 0.62, 0.16 + h * 0.18 + u_bass * 0.06));
-  vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.78, 0.38 + u_treble * 0.12));
-  vec3 water = hsv2rgb(vec3(u_theme.x, 0.74, 0.3 + u_mid * 0.12));
+  vec3 silt = hsv2rgb(vec3(u_theme.y, 0.66, 0.22 + h * 0.24 + u_bass * 0.12));
+  vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.86, 0.62 + u_treble * 0.2));
+  vec3 water = hsv2rgb(vec3(u_theme.x, 0.82, 0.48 + u_mid * 0.2));
 
   vec3 color = mix(deep, silt, smoothstep(-0.15, 0.78, h));
-  color = mix(color, ridge, smoothstep(0.52, 0.9, h) * (0.18 + shade * 0.24));
-  color = mix(color, water, channels * (0.34 + pulse * 0.18));
-  color += ridge * contours * (0.045 + u_treble * 0.1 + pulse * 0.04);
-  color += water * pow(channels, 2.0) * (0.055 + pulse * 0.09 + u_beat * 0.08);
-  color *= 0.42 + shade * 0.48;
-  color += sediment * 0.018 + grain * (0.012 + u_treble * 0.018);
-  color += vec3(1.0, 0.82, 0.55) * u_beat * 0.035;
-
-  vec2 texel = 1.0 / u_resolution;
-  vec3 prev = texture2D(u_previous, v_uv).rgb;
-  vec3 prevBlur = (
-    texture2D(u_previous, v_uv + vec2(texel.x, 0.0)).rgb +
-    texture2D(u_previous, v_uv - vec2(texel.x, 0.0)).rgb +
-    texture2D(u_previous, v_uv + vec2(0.0, texel.y)).rgb +
-    texture2D(u_previous, v_uv - vec2(0.0, texel.y)).rgb
-  ) * 0.25;
-  vec3 memory = mix(prev, prevBlur, 0.28 + u_mid * 0.2);
-  memory *= 0.885 - u_energy * 0.025;
-  vec3 excitation = color * (0.12 + pulse * 0.09 + u_beat * 0.06);
-  color = mix(color, memory + excitation, u_feedback);
-  color = color / (1.0 + color * 1.55);
+  color = mix(color, ridge, smoothstep(0.52, 0.9, h) * (0.28 + shade * 0.34));
+  color = mix(color, water, channels * (0.46 + pulse * 0.28));
+  color += ridge * contours * (0.1 + u_treble * 0.2 + pulse * 0.1);
+  color += water * pow(channels, 2.0) * (0.12 + pulse * 0.18 + u_beat * 0.18);
+  color *= 0.58 + shade * 0.72;
+  color += sediment * 0.035 + grain * (0.025 + u_treble * 0.04);
+  color += vec3(1.0, 0.88, 0.62) * u_beat * 0.12;
   float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
   color = mix(vec3(luma), color, u_saturation);
   color = mix(vec3(0.5), color, u_sharpness);
 
   float vignette = smoothstep(1.55, 0.18, length(uv - 0.5));
-  color *= 0.34 + vignette * 0.72;
+  color *= 0.38 + vignette * 0.9;
   gl_FragColor = vec4(color, 1.0);
-}
-`;
-
-const displayFragmentShader = `
-precision highp float;
-
-uniform sampler2D u_scene;
-varying vec2 v_uv;
-
-void main() {
-  gl_FragColor = texture2D(u_scene, v_uv);
 }
 `;
 
@@ -753,40 +723,8 @@ function createProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-function createFeedbackTexture(gl, width, height) {
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  return texture;
-}
-
-function createFeedbackTarget(gl, width, height) {
-  const texture = createFeedbackTexture(gl, width, height);
-  const framebuffer = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-  return { texture, framebuffer };
-}
-
 function resetErosionFeedback() {
-  if (!webglState?.gl) return;
-  const { gl, feedback } = webglState;
-  if (feedback?.targets) {
-    feedback.targets.forEach((target) => {
-      gl.deleteTexture(target.texture);
-      gl.deleteFramebuffer(target.framebuffer);
-    });
-  }
-
-  const width = Math.max(1, webglCanvas.width);
-  const height = Math.max(1, webglCanvas.height);
-  const targets = [createFeedbackTarget(gl, width, height), createFeedbackTarget(gl, width, height)];
-  webglState.feedback = { width, height, targets, readIndex: 0, initialized: false };
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  // Kept for callers that reset WebGL state when switching modes or resizing.
 }
 
 function initErosionWebgl() {
@@ -804,7 +742,6 @@ function initErosionWebgl() {
 
   try {
     const program = createProgram(gl, erosionVertexShader, erosionFragmentShader);
-    const displayProgram = createProgram(gl, erosionVertexShader, displayFragmentShader);
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -817,10 +754,8 @@ function initErosionWebgl() {
     webglState = {
       gl,
       program,
-      displayProgram,
       buffer,
       position: gl.getAttribLocation(program, "a_position"),
-      displayPosition: gl.getAttribLocation(displayProgram, "a_position"),
       uniforms: {
         resolution: gl.getUniformLocation(program, "u_resolution"),
         time: gl.getUniformLocation(program, "u_time"),
@@ -830,8 +765,6 @@ function initErosionWebgl() {
         energy: gl.getUniformLocation(program, "u_energy"),
         beat: gl.getUniformLocation(program, "u_beat"),
         theme: gl.getUniformLocation(program, "u_theme"),
-        previous: gl.getUniformLocation(program, "u_previous"),
-        feedback: gl.getUniformLocation(program, "u_feedback"),
         scale: gl.getUniformLocation(program, "u_scale"),
         density: gl.getUniformLocation(program, "u_density"),
         gradient: gl.getUniformLocation(program, "u_gradient"),
@@ -839,11 +772,7 @@ function initErosionWebgl() {
         sharpness: gl.getUniformLocation(program, "u_sharpness"),
         line: gl.getUniformLocation(program, "u_line"),
       },
-      displayUniforms: {
-        scene: gl.getUniformLocation(displayProgram, "u_scene"),
-      },
     };
-    resetErosionFeedback();
   } catch (error) {
     console.error(error);
     webglSupported = false;
@@ -856,35 +785,15 @@ function initErosionWebgl() {
 function drawErosionFlow(features) {
   const state = initErosionWebgl();
   if (!state) return;
-  const { gl, program, displayProgram, buffer, position, displayPosition, uniforms, displayUniforms } = state;
+  const { gl, program, buffer, position, uniforms } = state;
   const theme = tunedTheme();
   const sensitivity = Number(sensitivityInput.value);
-  if (!state.feedback || state.feedback.width !== webglCanvas.width || state.feedback.height !== webglCanvas.height) {
-    resetErosionFeedback();
-  }
-
-  const feedback = state.feedback;
-  const read = feedback.targets[feedback.readIndex];
-  const writeIndex = 1 - feedback.readIndex;
-  const write = feedback.targets[writeIndex];
-
-  if (!feedback.initialized) {
-    feedback.targets.forEach((target) => {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-      gl.clearColor(0.03, 0.04, 0.06, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    });
-    feedback.initialized = true;
-  }
-
   gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, write.framebuffer);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.useProgram(program);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.enableVertexAttribArray(position);
   gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, read.texture);
   gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
   gl.uniform1f(uniforms.time, frame / 60);
   gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
@@ -893,8 +802,6 @@ function drawErosionFlow(features) {
   gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
   gl.uniform1f(uniforms.beat, features.beat);
   gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
-  gl.uniform1i(uniforms.previous, 0);
-  gl.uniform1f(uniforms.feedback, 0.48 + Math.min(0.12, features.energy * 0.12));
   gl.uniform1f(uniforms.scale, visualTuning.size);
   gl.uniform1f(uniforms.density, visualTuning.density);
   gl.uniform1f(uniforms.gradient, visualTuning.gradient);
@@ -902,17 +809,6 @@ function drawErosionFlow(features) {
   gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
   gl.uniform1f(uniforms.line, visualTuning.line);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.useProgram(displayProgram);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.enableVertexAttribArray(displayPosition);
-  gl.vertexAttribPointer(displayPosition, 2, gl.FLOAT, false, 0, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, write.texture);
-  gl.uniform1i(displayUniforms.scene, 0);
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
-  feedback.readIndex = writeIndex;
 }
 
 function drawRing(width, height, features) {
