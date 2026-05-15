@@ -265,7 +265,8 @@ h1 {
   gap: 8px;
 }
 
-.url-loader input {
+.url-loader input,
+.visual-text-input {
   min-width: 0;
   height: 40px;
   padding: 0 12px;
@@ -276,7 +277,8 @@ h1 {
   color: var(--text);
 }
 
-.url-loader input:focus {
+.url-loader input:focus,
+.visual-text-input:focus {
   border-color: rgba(118, 228, 247, 0.82);
 }
 

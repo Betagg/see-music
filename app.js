@@ -4,6 +4,7 @@ const webglCanvas = document.querySelector("#webglVisualizer");
 const audio = document.querySelector("#audio");
 const fileInput = document.querySelector("#fileInput");
 const urlInput = document.querySelector("#urlInput");
+const visualTextInput = document.querySelector("#visualTextInput");
 const loadUrlButton = document.querySelector("#loadUrlButton");
 const trackName = document.querySelector("#trackName");
 const emptyState = document.querySelector("#emptyState");
@@ -47,6 +48,7 @@ const translations = {
     heroTitle: "看见音乐之美",
     chooseMusic: "选择音乐",
     urlPlaceholder: "粘贴音频直链或视频链接",
+    visualTextPlaceholder: "输入视觉文字，例如：看见音乐之美",
     load: "读取",
     emptyTrack: "还没有选择文件",
     modeRing: "光谱圆环",
@@ -61,6 +63,7 @@ const translations = {
     modeCrystal: "晶体星尘",
     modeSkyChamber: "光域天窗",
     modeBoiling: "沸点字浪",
+    modeTypeFlow: "字浪流体",
     modeErosion: "侵蚀流域",
     modeSeascape: "海面光景",
     modeSunWater: "柔浪日海",
@@ -107,12 +110,14 @@ const translations = {
     downloadTriggered: "已触发下载；如果没有反应，已尝试打开视频预览页。",
     dragAudio: "松开即可载入音乐文件。",
     badDrop: "请拖入音频文件。",
+    defaultVisualText: "看见音乐之美",
   },
   en: {
     brand: "See Music",
     heroTitle: "See the Beauty of Music",
     chooseMusic: "Choose Music",
     urlPlaceholder: "Paste an audio or video link",
+    visualTextPlaceholder: "Enter visual text, e.g. See the Beauty of Music",
     load: "Load",
     emptyTrack: "No file selected",
     modeRing: "Spectrum Ring",
@@ -127,6 +132,7 @@ const translations = {
     modeCrystal: "Crystal Drift",
     modeSkyChamber: "Sky Chamber",
     modeBoiling: "Boiling Type",
+    modeTypeFlow: "Type Tide",
     modeErosion: "Erosion Flow",
     modeSeascape: "Sea Light",
     modeSunWater: "Sunlit Water",
@@ -173,6 +179,7 @@ const translations = {
     downloadTriggered: "Download triggered. If nothing happens, a preview tab was opened.",
     dragAudio: "Drop to load the music file.",
     badDrop: "Drop an audio file.",
+    defaultVisualText: "See the Beauty of Music",
   },
 };
 const hazeSeeds = Array.from({ length: 48 }, (_, index) => ({
@@ -213,6 +220,12 @@ const boilingBubbles = Array.from({ length: 86 }, (_, index) => ({
   phase: index * 0.47,
 }));
 let boilingDroplets = [];
+const typeFlowDust = Array.from({ length: 150 }, (_, index) => ({
+  x: (Math.sin(index * 47.23) * 0.5 + 0.5) % 1,
+  y: (Math.sin(index * 91.17 + 1.7) * 0.5 + 0.5) % 1,
+  size: 0.45 + ((index * 19) % 13) / 8,
+  phase: index * 0.57,
+}));
 
 let audioContext;
 let analyser;
@@ -342,6 +355,17 @@ const modeTuningConfigs = {
     { key: "speed", zh: "沸腾速度", en: "Boil Speed", min: 0.2, max: 2.4, step: 0.05 },
     { key: "vibration", zh: "喷溅幅度", en: "Splash Energy", min: 0, max: 2.4, step: 0.05 },
     { key: "hue", zh: "水光色相", en: "Water Hue", min: -180, max: 180, step: 5 },
+  ],
+  typeflow: [
+    { key: "size", zh: "文字尺度", en: "Type Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "碎片密度", en: "Fragment Density", min: 0.35, max: 2.2, step: 0.05 },
+    { key: "line", zh: "描边粗细", en: "Outline Width", min: 0.4, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "折射渐变", en: "Refraction Gradient", min: 0.4, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "文字色彩", en: "Type Color", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "sharpness", zh: "碎裂锐度", en: "Shard Sharpness", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "speed", zh: "漂浮速度", en: "Float Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "字浪律动", en: "Type Tide", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "文字色相", en: "Type Hue", min: -180, max: 180, step: 5 },
   ],
   erosion: [
     { key: "size", zh: "地形尺度", en: "Terrain Scale", min: 0.65, max: 1.7, step: 0.05 },
@@ -3148,6 +3172,168 @@ function drawBoilingType(width, height, features) {
   ctx.restore();
 }
 
+function visualTextCharacters() {
+  const value = visualTextInput?.value.trim() || t("defaultVisualText");
+  const normalized = value.replace(/\s+/g, " ").slice(0, 32);
+  const chars = Array.from(normalized);
+  return chars.length ? chars : Array.from(t("defaultVisualText"));
+}
+
+function drawTypeFlow(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const theme = tunedTheme();
+  const size = Math.min(width, height);
+  const chars = visualTextCharacters();
+  const visibleChars = chars.slice(0, 32);
+  const asciiCount = visibleChars.filter((char) => /[A-Za-z0-9]/.test(char)).length;
+  const fontRatio = asciiCount > visibleChars.length * 0.55 ? 0.68 : 1.04;
+  const maxTextWidth = width * 0.72;
+  const baseFont = Math.min(size * 0.15, Math.max(38, maxTextWidth / Math.max(visibleChars.length * fontRatio, 4)));
+  const fontSize = Math.min(118, Math.max(34, baseFont));
+  const tracking = fontSize * (asciiCount > visibleChars.length * 0.55 ? 0.58 : 0.86);
+  const totalWidth = visibleChars.reduce((sum, char) => sum + (char === " " ? tracking * 0.55 : tracking), 0);
+  const centerX = width * 0.5;
+  const centerY = height * 0.47;
+  const hueA = theme.base + visualTuning.hue;
+  const hueB = theme.second + visualTuning.hue * 0.45;
+  const hueC = theme.third - visualTuning.hue * 0.25;
+  const tide = features.bass * 0.9 + features.mid * 0.45 + features.beat * 0.35;
+
+  ctx.save();
+  const bg = ctx.createRadialGradient(centerX, centerY, size * 0.04, centerX, centerY, size * 0.82);
+  bg.addColorStop(0, `hsla(${hueB}, 78%, ${12 + features.mid * 9}%, 1)`);
+  bg.addColorStop(0.48, `hsla(${hueA + 190}, 76%, ${7 + features.energy * 8}%, 1)`);
+  bg.addColorStop(1, `hsla(${hueA}, 86%, 4%, 1)`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "screen";
+  for (let band = 0; band < 18; band += 1) {
+    const depth = band / 17;
+    const y = centerY + size * (0.1 + depth * 0.36);
+    ctx.beginPath();
+    for (let i = 0; i <= 150; i += 1) {
+      const t = i / 150;
+      const bin = Math.floor(t * frequencyData.length * 0.62);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.15;
+      const wave = Math.sin(t * Math.PI * (4.6 + band * 0.18) + frame * (0.017 + depth * 0.018)) * size * (0.012 + amp * 0.024 + features.bass * 0.018) * sensitivity;
+      const slow = Math.sin(frame * 0.008 + depth * 5.4 + t * 3.2) * features.mid * size * 0.012;
+      const x = width * (t - 0.04);
+      const yy = y + wave + slow;
+      if (i === 0) ctx.moveTo(x, yy);
+      else ctx.lineTo(x, yy);
+    }
+    ctx.strokeStyle = `hsla(${hueA + depth * 68}, 96%, ${58 + depth * 18}%, ${0.035 + (1 - depth) * 0.1 + features.treble * 0.055})`;
+    ctx.lineWidth = (0.8 + depth * 1.8) * visualTuning.line;
+    ctx.stroke();
+  }
+
+  ctx.font = `900 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let ghost = 5; ghost >= 1; ghost -= 1) {
+    const opacity = 0.018 + ghost * 0.011 * visualTuning.gradient;
+    const offset = ghost * size * (0.025 + features.mid * 0.018);
+    let xCursor = centerX - totalWidth * 0.5;
+    for (let index = 0; index < visibleChars.length; index += 1) {
+      const char = visibleChars[index];
+      const step = char === " " ? tracking * 0.55 : tracking;
+      const x = xCursor + step * 0.5;
+      xCursor += step;
+      if (char === " ") continue;
+      const phase = index * 0.9 + ghost * 0.64;
+      const y = centerY + Math.sin(frame * 0.018 + phase) * offset + ghost * size * 0.018;
+      ctx.fillStyle = `hsla(${hueC + ghost * 18}, 96%, 70%, ${opacity})`;
+      ctx.fillText(char, x + Math.sin(frame * 0.01 + phase) * offset * 0.35, y);
+    }
+  }
+
+  let cursor = centerX - totalWidth * 0.5;
+  for (let index = 0; index < visibleChars.length; index += 1) {
+    const char = visibleChars[index];
+    const step = char === " " ? tracking * 0.55 : tracking;
+    const x = cursor + step * 0.5;
+    cursor += step;
+    if (char === " ") continue;
+
+    const bin = Math.floor((index / Math.max(1, visibleChars.length - 1)) * frequencyData.length * 0.68);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.08;
+    const lift = amp * size * 0.09 * sensitivity + tide * size * 0.018;
+    const drift = Math.sin(frame * 0.018 + index * 0.83) * size * 0.018 + features.mid * Math.sin(index * 1.7) * size * 0.03;
+    const y = centerY - lift + Math.sin(frame * 0.013 + index * 1.1) * size * 0.025;
+    const shear = Math.sin(frame * 0.012 + index * 0.7) * (0.08 + features.mid * 0.12);
+    const rotate = Math.sin(frame * 0.009 + index) * 0.08 + features.beat * 0.035;
+
+    ctx.save();
+    ctx.translate(x + drift, y);
+    ctx.rotate(rotate);
+    ctx.transform(1, features.mid * 0.04, shear, 1, 0, 0);
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.35 + features.bass * 0.22})`;
+    ctx.fillText(char, fontSize * 0.07, fontSize * 0.09);
+    ctx.lineWidth = (1.6 + amp * 3.5 + features.beat * 1.2) * visualTuning.line;
+    ctx.strokeStyle = `hsla(${hueC + amp * 80}, 100%, 78%, ${0.24 + amp * 0.42})`;
+    ctx.strokeText(char, 0, 0);
+    const face = ctx.createLinearGradient(0, -fontSize * 0.62, 0, fontSize * 0.64);
+    face.addColorStop(0, `hsla(${hueA + amp * 48}, 100%, ${84 + amp * 8}%, ${0.82 + amp * 0.16})`);
+    face.addColorStop(0.48, `hsla(${hueB}, 94%, ${62 + amp * 14}%, ${0.74 + amp * 0.18})`);
+    face.addColorStop(1, `hsla(${hueC}, 95%, ${44 + features.bass * 16}%, ${0.62 + amp * 0.18})`);
+    ctx.fillStyle = face;
+    ctx.fillText(char, 0, 0);
+
+    const shardCount = Math.round((4 + amp * 10 + features.treble * 14) * visualTuning.density);
+    for (let shard = 0; shard < shardCount; shard += 1) {
+      const seed = typeFlowDust[(index * 11 + shard * 7) % typeFlowDust.length];
+      const angle = seed.phase + frame * 0.018 + features.treble * 1.8;
+      const distance = fontSize * (0.34 + seed.x * 0.55) * (0.4 + features.treble + amp * 0.7);
+      const sx = Math.cos(angle) * distance;
+      const sy = Math.sin(angle * 1.27) * distance * 0.55 + fontSize * (seed.y - 0.5) * 0.7;
+      ctx.fillStyle = `hsla(${hueA + seed.phase * 24}, 100%, 78%, ${0.04 + features.treble * 0.23 + amp * 0.12})`;
+      ctx.fillRect(sx, sy, seed.size * (1 + features.treble * 2.5) * visualTuning.sharpness, 1.1 * visualTuning.line);
+    }
+    ctx.restore();
+  }
+
+  const waterline = centerY + size * (0.18 + features.bass * 0.035);
+  const water = ctx.createLinearGradient(0, waterline - size * 0.14, 0, height);
+  water.addColorStop(0, `hsla(${hueC}, 100%, 78%, ${0.18 + features.energy * 0.12})`);
+  water.addColorStop(0.24, `hsla(${hueA + 170}, 96%, 54%, ${0.1 + features.mid * 0.1})`);
+  water.addColorStop(1, "rgba(0, 10, 28, 0.74)");
+  ctx.fillStyle = water;
+  ctx.beginPath();
+  ctx.moveTo(0, waterline);
+  for (let i = 0; i <= 130; i += 1) {
+    const t = i / 130;
+    const bin = Math.floor(t * frequencyData.length * 0.58);
+    const amp = (frequencyData[bin] || 0) / 255;
+    const y = waterline + Math.sin(t * Math.PI * 4.4 + frame * 0.032) * size * (0.018 + amp * 0.035) * sensitivity;
+    ctx.lineTo(t * width, y);
+  }
+  ctx.lineTo(width, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fill();
+
+  for (const dust of typeFlowDust) {
+    if (dust.x > visualTuning.density * 0.55) continue;
+    const x = (dust.x * 1.18 - 0.09) * width + Math.sin(frame * 0.008 + dust.phase) * size * 0.025;
+    const y = (dust.y * 0.82 + 0.08) * height + Math.cos(frame * 0.011 + dust.phase) * features.mid * size * 0.06;
+    const alpha = 0.025 + features.treble * 0.12 + features.beat * 0.04;
+    ctx.fillStyle = `hsla(${hueB + dust.phase * 13}, 96%, 76%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, dust.size * (0.8 + features.treble * 1.7), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalCompositeOperation = "source-over";
+  const vignette = ctx.createRadialGradient(centerX, centerY, size * 0.18, centerX, centerY, size * 0.88);
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.52)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
 function render() {
   frame += visualTuning.speed;
   const width = canvas.clientWidth;
@@ -3183,6 +3369,7 @@ function render() {
   if (currentMode === "crystal") drawCrystalDrift(width, height, features);
   if (currentMode === "skychamber") drawSkyChamber(width, height, features);
   if (currentMode === "boiling") drawBoilingType(width, height, features);
+  if (currentMode === "typeflow") drawTypeFlow(width, height, features);
 
   ctx.restore();
   ctx.filter = "none";
