@@ -63,6 +63,7 @@ const translations = {
     modeBoiling: "沸点字浪",
     modeErosion: "侵蚀流域",
     modeSeascape: "海面光景",
+    modeSunWater: "柔浪日海",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -126,6 +127,7 @@ const translations = {
     modeBoiling: "Boiling Type",
     modeErosion: "Erosion Flow",
     modeSeascape: "Sea Light",
+    modeSunWater: "Sunlit Water",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -232,6 +234,7 @@ let currentLanguage = "zh";
 let dragDepth = 0;
 let webglState;
 let seascapeState;
+let sunWaterState;
 let webglSupported = true;
 const tuningDefaults = {
   size: 1,
@@ -352,6 +355,16 @@ const modeTuningConfigs = {
     { key: "sharpness", zh: "反光锐度", en: "Specular Sharpness", min: 0.35, max: 1.8, step: 0.05 },
     { key: "vibration", zh: "浪高律动", en: "Wave Energy", min: 0, max: 2.4, step: 0.05 },
     { key: "hue", zh: "海面色相", en: "Sea Hue", min: -180, max: 180, step: 5 },
+  ],
+  sunwater: [
+    { key: "size", zh: "镜头亲近", en: "Camera Closeness", min: 0.65, max: 1.55, step: 0.05 },
+    { key: "density", zh: "细浪层次", en: "Ripple Layers", min: 0.45, max: 2.1, step: 0.05 },
+    { key: "line", zh: "水面牵引", en: "Wave Drag", min: 0.35, max: 2.0, step: 0.05 },
+    { key: "gradient", zh: "日光高度", en: "Sun Height", min: 0.35, max: 1.65, step: 0.05 },
+    { key: "saturation", zh: "海水浓度", en: "Water Saturation", min: 0.35, max: 1.6, step: 0.05 },
+    { key: "sharpness", zh: "闪光柔度", en: "Glint Softness", min: 0.35, max: 1.6, step: 0.05 },
+    { key: "vibration", zh: "浪涛律动", en: "Wave Rhythm", min: 0, max: 1.8, step: 0.05 },
+    { key: "hue", zh: "晨昏色相", en: "Dawn Hue", min: -180, max: 180, step: 5 },
   ],
 };
 let visualTuning = { ...tuningDefaults };
@@ -508,7 +521,7 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   webglCanvas.width = canvas.width;
   webglCanvas.height = canvas.height;
-  const gl = webglState?.gl || seascapeState?.gl;
+  const gl = webglState?.gl || seascapeState?.gl || sunWaterState?.gl;
   if (gl) {
     gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
     resetErosionFeedback();
@@ -913,6 +926,198 @@ void main() {
 }
 `;
 
+// Adapted from user-provided Shadertoy code by afl_ext (2017-2024), MIT License.
+const sunWaterFragmentShader = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_treble;
+uniform float u_energy;
+uniform float u_beat;
+uniform vec3 u_theme;
+uniform float u_scale;
+uniform float u_density;
+uniform float u_gradient;
+uniform float u_saturation;
+uniform float u_sharpness;
+uniform float u_line;
+
+mat3 rotationAxisAngle(vec3 axis, float angle) {
+  float s = sin(angle);
+  float c = cos(angle);
+  float oc = 1.0 - c;
+  return mat3(
+    oc * axis.x * axis.x + c, oc * axis.x * axis.y - axis.z * s, oc * axis.z * axis.x + axis.y * s,
+    oc * axis.x * axis.y + axis.z * s, oc * axis.y * axis.y + c, oc * axis.y * axis.z - axis.x * s,
+    oc * axis.z * axis.x - axis.y * s, oc * axis.y * axis.z + axis.x * s, oc * axis.z * axis.z + c
+  );
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+vec2 waveDx(vec2 position, vec2 direction, float frequency, float timeShift) {
+  float x = dot(direction, position) * frequency + timeShift;
+  float wave = exp(sin(x) - 1.0);
+  float dx = wave * cos(x);
+  return vec2(wave, -dx);
+}
+
+float getWaves(vec2 position, int iterations) {
+  float phaseShift = length(position) * 0.08;
+  float iter = 0.0;
+  float frequency = 1.0 + u_treble * 0.16;
+  float timeMultiplier = 1.55 + u_mid * 0.28;
+  float weight = 1.0;
+  float valueSum = 0.0;
+  float weightSum = 0.0;
+  float drag = 0.08 + u_line * 0.12;
+  float detailBoost = max(u_density, 0.2);
+
+  for (int i = 0; i < 36; i++) {
+    if (i >= iterations) break;
+    vec2 direction = vec2(sin(iter), cos(iter));
+    vec2 res = waveDx(position, direction, frequency * detailBoost, u_time * timeMultiplier + phaseShift);
+    position += direction * res.y * weight * drag;
+    valueSum += res.x * weight;
+    weightSum += weight;
+    weight = mix(weight, 0.0, 0.2);
+    frequency *= 1.18;
+    timeMultiplier *= 1.055;
+    iter += 1232.399963;
+  }
+
+  return valueSum / max(weightSum, 0.001);
+}
+
+float intersectPlane(vec3 origin, vec3 direction, vec3 point, vec3 normal) {
+  return clamp(dot(point - origin, normal) / dot(direction, normal), -1.0, 9991999.0);
+}
+
+float raymarchWater(vec3 camera, vec3 start, vec3 end, float depth) {
+  vec3 pos = start;
+  vec3 dir = normalize(end - start);
+  for (int i = 0; i < 54; i++) {
+    float height = getWaves(pos.xz, 12) * depth - depth;
+    if (height + 0.01 > pos.y) {
+      return distance(pos, camera);
+    }
+    pos += dir * (pos.y - height);
+  }
+  return distance(start, camera);
+}
+
+vec3 waterNormal(vec2 pos, float e, float depth) {
+  vec2 ex = vec2(e, 0.0);
+  float h = getWaves(pos.xy, 30) * depth;
+  vec3 a = vec3(pos.x, h, pos.y);
+  return normalize(
+    cross(
+      a - vec3(pos.x - e, getWaves(pos.xy - ex.xy, 30) * depth, pos.y),
+      a - vec3(pos.x, getWaves(pos.xy + ex.yx, 30) * depth, pos.y + e)
+    )
+  );
+}
+
+vec3 sunDirection() {
+  float height = 0.24 + u_gradient * 0.28 + sin(u_time * 0.035) * 0.035 + u_energy * 0.03;
+  return normalize(vec3(-0.08, height, 0.58));
+}
+
+vec3 atmosphere(vec3 rayDir, vec3 sunDir) {
+  float safeY = max(rayDir.y, -0.08);
+  float horizonGlow = 1.0 / (safeY + 0.16);
+  float sunLift = 1.0 / (sunDir.y * 10.0 + 1.0);
+  float raySun = pow(abs(dot(sunDir, rayDir)), 2.0);
+  float sunDot = pow(max(0.0, dot(sunDir, rayDir)), 8.0);
+  vec3 sunColor = mix(vec3(1.0), vec3(0.76, 0.58, 0.36), clamp(sunLift, 0.0, 1.0));
+  vec3 skyBlue = vec3(0.25, 0.58, 1.0) * sunColor;
+  vec3 haze = max(vec3(0.0), skyBlue - vec3(0.013, 0.032, 0.056) * (horizonGlow - 5.2 * sunDir.y * sunDir.y));
+  haze *= horizonGlow * (0.16 + raySun * 0.2);
+  haze += sunColor * sunDot * horizonGlow * 0.045;
+  return haze * (0.52 + 0.34 * pow(1.0 - rayDir.y, 3.0));
+}
+
+float sunDisc(vec3 dir) {
+  float softness = mix(420.0, 170.0, clamp(u_sharpness, 0.0, 1.6) / 1.6);
+  return pow(max(0.0, dot(dir, sunDirection())), softness) * (28.0 + u_treble * 22.0);
+}
+
+vec3 acesToneMap(vec3 color) {
+  mat3 m1 = mat3(
+    0.59719, 0.07600, 0.02840,
+    0.35458, 0.90834, 0.13383,
+    0.04823, 0.01566, 0.83777
+  );
+  mat3 m2 = mat3(
+    1.60475, -0.10208, -0.00327,
+    -0.53108, 1.10813, -0.07276,
+    -0.07367, -0.00605, 1.07602
+  );
+  vec3 v = m1 * color;
+  vec3 a = v * (v + 0.0245786) - 0.000090537;
+  vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+  return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(1.0 / 2.2));
+}
+
+vec3 cameraRay(vec2 fragCoord) {
+  vec2 uv = ((fragCoord / u_resolution.xy) * 2.0 - 1.0) * vec2(u_resolution.x / u_resolution.y, 1.0);
+  uv /= max(u_scale, 0.3);
+  vec3 proj = normalize(vec3(uv.x, uv.y - 0.28 - u_bass * 0.025, 1.55));
+  float yaw = sin(u_time * 0.045) * 0.035 + u_mid * 0.012;
+  float pitch = -0.18 + sin(u_time * 0.06) * 0.018 - u_beat * 0.012;
+  return rotationAxisAngle(vec3(0.0, -1.0, 0.0), yaw) * rotationAxisAngle(vec3(1.0, 0.0, 0.0), pitch) * proj;
+}
+
+void main() {
+  vec3 ray = cameraRay(gl_FragCoord.xy);
+  vec3 sunDir = sunDirection();
+  vec3 warmTint = hsv2rgb(vec3(u_theme.z, 0.28, 1.0));
+
+  if (ray.y >= 0.0) {
+    vec3 sky = atmosphere(ray, sunDir) + sunDisc(ray) * warmTint * 0.56;
+    vec3 color = acesToneMap(sky * 1.35);
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    gl_FragColor = vec4(mix(vec3(luma), color, u_saturation), 1.0);
+    return;
+  }
+
+  float depth = 0.82 + u_bass * 0.1 + u_energy * 0.06;
+  vec3 origin = vec3(u_time * (0.045 + u_mid * 0.018), 1.34 + u_bass * 0.05, 1.0);
+  vec3 highPlane = vec3(0.0, 0.0, 0.0);
+  vec3 lowPlane = vec3(0.0, -depth, 0.0);
+  float highHit = intersectPlane(origin, ray, highPlane, vec3(0.0, 1.0, 0.0));
+  float lowHit = intersectPlane(origin, ray, lowPlane, vec3(0.0, 1.0, 0.0));
+  vec3 highPos = origin + ray * highHit;
+  vec3 lowPos = origin + ray * lowHit;
+  float dist = raymarchWater(origin, highPos, lowPos, depth);
+  vec3 hit = origin + ray * dist;
+
+  vec3 n = waterNormal(hit.xz, 0.01, depth);
+  n = mix(n, vec3(0.0, 1.0, 0.0), 0.84 * min(1.0, sqrt(dist * 0.01) * 1.08));
+  float fresnel = 0.04 + 0.96 * pow(1.0 - max(0.0, dot(-n, ray)), 5.0);
+
+  vec3 reflectedRay = normalize(reflect(ray, n));
+  reflectedRay.y = abs(reflectedRay.y);
+  vec3 reflection = atmosphere(reflectedRay, sunDir) + sunDisc(reflectedRay) * warmTint * (0.42 + u_beat * 0.12);
+  vec3 waterTone = hsv2rgb(vec3(u_theme.x + 0.03, 0.65, 0.22));
+  vec3 scattering = waterTone * 0.11 * (0.2 + (hit.y + depth) / depth) * (0.86 + u_bass * 0.18);
+  vec3 color = fresnel * reflection + scattering;
+  color += warmTint * pow(max(0.0, dot(reflectedRay, sunDir)), 32.0) * (0.015 + u_treble * 0.018);
+  color = acesToneMap(color * 1.45);
+
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, u_saturation);
+  color = mix(vec3(0.5), color, 0.82 + u_sharpness * 0.12);
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -1108,8 +1313,92 @@ function drawSeascape(features) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
+function initSunWaterWebgl() {
+  if (sunWaterState || !webglSupported) return sunWaterState;
+  const gl = webglCanvas.getContext("webgl", {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    webglSupported = false;
+    return null;
+  }
+
+  try {
+    const program = createProgram(gl, erosionVertexShader, sunWaterFragmentShader);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    sunWaterState = {
+      gl,
+      program,
+      buffer,
+      position: gl.getAttribLocation(program, "a_position"),
+      uniforms: {
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        time: gl.getUniformLocation(program, "u_time"),
+        bass: gl.getUniformLocation(program, "u_bass"),
+        mid: gl.getUniformLocation(program, "u_mid"),
+        treble: gl.getUniformLocation(program, "u_treble"),
+        energy: gl.getUniformLocation(program, "u_energy"),
+        beat: gl.getUniformLocation(program, "u_beat"),
+        theme: gl.getUniformLocation(program, "u_theme"),
+        scale: gl.getUniformLocation(program, "u_scale"),
+        density: gl.getUniformLocation(program, "u_density"),
+        gradient: gl.getUniformLocation(program, "u_gradient"),
+        saturation: gl.getUniformLocation(program, "u_saturation"),
+        sharpness: gl.getUniformLocation(program, "u_sharpness"),
+        line: gl.getUniformLocation(program, "u_line"),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    webglSupported = false;
+    return null;
+  }
+
+  return sunWaterState;
+}
+
+function drawSunWater(features) {
+  const state = initSunWaterWebgl();
+  if (!state) return;
+  const { gl, program, buffer, position, uniforms } = state;
+  const theme = tunedTheme();
+  const sensitivity = Number(sensitivityInput.value);
+  gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
+  gl.uniform1f(uniforms.time, frame / 60);
+  gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
+  gl.uniform1f(uniforms.mid, Math.min(1, features.mid * sensitivity));
+  gl.uniform1f(uniforms.treble, Math.min(1, features.treble * sensitivity));
+  gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
+  gl.uniform1f(uniforms.beat, features.beat);
+  gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.uniform1f(uniforms.scale, visualTuning.size);
+  gl.uniform1f(uniforms.density, visualTuning.density);
+  gl.uniform1f(uniforms.gradient, visualTuning.gradient);
+  gl.uniform1f(uniforms.saturation, visualTuning.saturation);
+  gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
+  gl.uniform1f(uniforms.line, visualTuning.line);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
 function isWebglModeName(mode) {
-  return mode === "erosion" || mode === "seascape";
+  return mode === "erosion" || mode === "seascape" || mode === "sunwater";
 }
 
 function drawRing(width, height, features) {
@@ -2219,6 +2508,7 @@ function render() {
     ctx.clearRect(0, 0, width, height);
     if (currentMode === "erosion") drawErosionFlow(features);
     if (currentMode === "seascape") drawSeascape(features);
+    if (currentMode === "sunwater") drawSunWater(features);
     requestAnimationFrame(render);
     return;
   }
