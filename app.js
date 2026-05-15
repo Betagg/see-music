@@ -55,6 +55,7 @@ const translations = {
     modePsyfluid: "迷幻流体",
     modeCrystal: "晶体星尘",
     modeSkyChamber: "光域天窗",
+    modeBoiling: "沸点字浪",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -113,6 +114,7 @@ const translations = {
     modePsyfluid: "Psy Fluid",
     modeCrystal: "Crystal Drift",
     modeSkyChamber: "Sky Chamber",
+    modeBoiling: "Boiling Type",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -183,6 +185,15 @@ const crystalSeeds = Array.from({ length: 28 }, (_, index) => ({
   hue: index % 3 === 0 ? 112 : index % 3 === 1 ? 286 : 186,
   phase: index * 0.61,
 }));
+
+const boilingLetters = "BOILING POINT".split("");
+const boilingBubbles = Array.from({ length: 86 }, (_, index) => ({
+  x: (Math.sin(index * 31.13) * 0.5 + 0.5) % 1,
+  z: 0.35 + (((index * 23) % 100) / 100) * 0.9,
+  radius: 0.7 + ((index * 11) % 13) / 5,
+  phase: index * 0.47,
+}));
+let boilingDroplets = [];
 
 let audioContext;
 let analyser;
@@ -1254,6 +1265,159 @@ function drawSkyChamber(width, height, features) {
   ctx.restore();
 }
 
+function drawBoilingType(width, height, features) {
+  const sensitivity = Number(sensitivityInput.value);
+  const size = Math.min(width, height);
+  const surfaceY = height * (0.57 + features.bass * 0.035);
+  const theme = themes[currentTheme];
+  const heat = 0.42 + features.energy * 0.95 + features.beat * 0.35;
+  const waveHeight = size * (0.025 + features.bass * 0.06) * sensitivity;
+
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, `hsla(${theme.base + 190}, 74%, 8%, 1)`);
+  bg.addColorStop(0.45, `hsla(${theme.second}, 72%, ${9 + features.mid * 8}%, 1)`);
+  bg.addColorStop(1, `hsla(${theme.base}, 92%, ${8 + features.energy * 10}%, 1)`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const vapor = ctx.createRadialGradient(width * 0.52, surfaceY, 0, width * 0.52, surfaceY, size * 0.62);
+  vapor.addColorStop(0, `rgba(205, 250, 255, ${0.08 + features.energy * 0.16})`);
+  vapor.addColorStop(0.45, `rgba(118, 228, 247, ${0.04 + features.mid * 0.08})`);
+  vapor.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = vapor;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = "lighter";
+  for (let band = 0; band < 18; band += 1) {
+    const depth = band / 17;
+    const y = surfaceY + depth * height * 0.38;
+    ctx.beginPath();
+    for (let i = 0; i <= 160; i += 1) {
+      const t = i / 160;
+      const bin = Math.floor(t * frequencyData.length * 0.58);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.2;
+      const ripple = Math.sin(t * Math.PI * (4 + band * 0.23) + frame * (0.018 + depth * 0.025)) * waveHeight * (0.2 + amp + depth * 0.35);
+      const x = width * (t - 0.04);
+      const yy = y + ripple + Math.sin(frame * 0.012 + band) * features.mid * 18;
+      if (i === 0) ctx.moveTo(x, yy);
+      else ctx.lineTo(x, yy);
+    }
+    ctx.strokeStyle = `hsla(${theme.base + depth * 76}, 96%, ${58 + depth * 18}%, ${0.055 + (1 - depth) * 0.12 + features.treble * 0.08})`;
+    ctx.lineWidth = 1 + depth * 2.4 + features.beat * 2;
+    ctx.stroke();
+  }
+
+  for (const bubble of boilingBubbles) {
+    const travel = (frame * (0.0025 + bubble.z * 0.0018) + bubble.phase) % 1;
+    const x = bubble.x * width + Math.sin(frame * 0.018 + bubble.phase) * size * 0.035;
+    const y = surfaceY + height * 0.4 - travel * height * (0.52 + features.bass * 0.18);
+    const r = bubble.radius * (1.5 + bubble.z) + features.treble * 8 + features.beat * 2;
+    const alpha = 0.08 + (1 - travel) * 0.16 + features.treble * 0.2;
+    ctx.strokeStyle = `rgba(210, 250, 255, ${alpha})`;
+    ctx.lineWidth = 0.8 + features.treble * 1.2;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * (0.8 + bubble.z * 0.18), r * 1.18, Math.sin(frame * 0.01 + bubble.phase) * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    if (travel > 0.82) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${(travel - 0.82) * 0.45})`;
+      ctx.beginPath();
+      ctx.arc(x, surfaceY + Math.sin(frame * 0.03 + bubble.phase) * 8, r * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const letterFont = Math.min(96, Math.max(42, width / 12));
+  const tracking = letterFont * 0.62;
+  const totalWidth = boilingLetters.reduce((sum, letter) => sum + (letter === " " ? tracking * 0.85 : tracking), 0);
+  let cursor = width * 0.5 - totalWidth * 0.5;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `900 ${letterFont}px Inter, ui-sans-serif, system-ui, sans-serif`;
+
+  boilingLetters.forEach((letter, index) => {
+    const isSpace = letter === " ";
+    const step = isSpace ? tracking * 0.85 : tracking;
+    const x = cursor + step * 0.5;
+    cursor += step;
+    if (isSpace) return;
+
+    const bin = Math.floor((index / boilingLetters.length) * frequencyData.length * 0.62);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.08;
+    const bob = Math.sin(frame * 0.028 + index * 0.9) * size * 0.018 + amp * size * 0.055 * sensitivity;
+    const y = surfaceY - size * 0.1 + bob + Math.sin(frame * 0.011 + index) * features.mid * 32;
+    const skew = Math.sin(frame * 0.016 + index * 1.4) * 0.13;
+    const tilt = Math.sin(frame * 0.01 + index * 0.8) * 0.08;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.transform(1, tilt, skew, 1, 0, 0);
+    ctx.fillStyle = `rgba(2, 10, 16, ${0.36 + heat * 0.18})`;
+    ctx.fillText(letter, 8 + features.beat * 3, 10 + features.beat * 4);
+    ctx.strokeStyle = `hsla(${theme.third + amp * 70}, 100%, 76%, ${0.22 + amp * 0.34})`;
+    ctx.lineWidth = 2 + amp * 3;
+    ctx.strokeText(letter, 0, 0);
+    const face = ctx.createLinearGradient(0, -letterFont * 0.55, 0, letterFont * 0.55);
+    face.addColorStop(0, `hsla(${theme.base + 178}, 100%, ${82 + amp * 10}%, ${0.84 + amp * 0.12})`);
+    face.addColorStop(0.55, `hsla(${theme.second}, 92%, ${62 + amp * 12}%, ${0.74 + amp * 0.18})`);
+    face.addColorStop(1, `hsla(${theme.base}, 94%, 48%, ${0.68 + amp * 0.18})`);
+    ctx.fillStyle = face;
+    ctx.fillText(letter, 0, 0);
+    ctx.restore();
+  });
+
+  ctx.globalCompositeOperation = "screen";
+  const waterMask = ctx.createLinearGradient(0, surfaceY - size * 0.06, 0, height);
+  waterMask.addColorStop(0, `rgba(218, 255, 255, ${0.22 + features.energy * 0.18})`);
+  waterMask.addColorStop(0.22, `rgba(80, 220, 255, ${0.1 + features.mid * 0.14})`);
+  waterMask.addColorStop(1, "rgba(0, 16, 44, 0.7)");
+  ctx.fillStyle = waterMask;
+  ctx.beginPath();
+  ctx.moveTo(0, surfaceY);
+  for (let i = 0; i <= 120; i += 1) {
+    const t = i / 120;
+    const bin = Math.floor(t * frequencyData.length * 0.55);
+    const amp = (frequencyData[bin] || 0) / 255;
+    const y = surfaceY + Math.sin(t * Math.PI * 5 + frame * 0.035) * waveHeight * (0.25 + amp);
+    ctx.lineTo(t * width, y);
+  }
+  ctx.lineTo(width, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fill();
+
+  if (features.energy > 0.06 && boilingDroplets.length < 42 && Math.random() < 0.22 + features.bass * 0.36) {
+    boilingDroplets.push({
+      x: Math.random() * width,
+      y: surfaceY + Math.random() * 24,
+      vx: (Math.random() - 0.5) * (1.5 + features.mid * 5),
+      vy: -(2.5 + Math.random() * 6 + features.bass * 9),
+      radius: 1.6 + Math.random() * 4 + features.treble * 5,
+      life: 42 + Math.random() * 28,
+    });
+  }
+
+  boilingDroplets = boilingDroplets
+    .map((drop) => ({
+      ...drop,
+      x: drop.x + drop.vx,
+      y: drop.y + drop.vy,
+      vy: drop.vy + 0.18,
+      life: drop.life - 1,
+    }))
+    .filter((drop) => drop.life > 0 && drop.y < height + 30);
+
+  for (const drop of boilingDroplets) {
+    ctx.fillStyle = `rgba(230, 255, 255, ${Math.max(0, drop.life / 70) * 0.55})`;
+    ctx.beginPath();
+    ctx.arc(drop.x, drop.y, drop.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+}
+
 function render() {
   frame += 1;
   const width = canvas.clientWidth;
@@ -1273,6 +1437,7 @@ function render() {
   if (currentMode === "psyfluid") drawPsyFluid(width, height, features);
   if (currentMode === "crystal") drawCrystalDrift(width, height, features);
   if (currentMode === "skychamber") drawSkyChamber(width, height, features);
+  if (currentMode === "boiling") drawBoilingType(width, height, features);
 
   requestAnimationFrame(render);
 }
