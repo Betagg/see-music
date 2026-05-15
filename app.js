@@ -4,7 +4,6 @@ const webglCanvas = document.querySelector("#webglVisualizer");
 const audio = document.querySelector("#audio");
 const fileInput = document.querySelector("#fileInput");
 const urlInput = document.querySelector("#urlInput");
-const visualTextInput = document.querySelector("#visualTextInput");
 const loadUrlButton = document.querySelector("#loadUrlButton");
 const trackName = document.querySelector("#trackName");
 const emptyState = document.querySelector("#emptyState");
@@ -48,7 +47,6 @@ const translations = {
     heroTitle: "看见音乐之美",
     chooseMusic: "选择音乐",
     urlPlaceholder: "粘贴音频直链或视频链接",
-    visualTextPlaceholder: "输入视觉文字，例如：看见音乐之美",
     load: "读取",
     emptyTrack: "还没有选择文件",
     modeRing: "光谱圆环",
@@ -67,7 +65,6 @@ const translations = {
     modeCanyon: "声纹峡谷",
     modeEmotionRing: "情绪文字环",
     modeMeditation: "冥想光场",
-    modeAnamorphic: "空间字阵",
     modeErosion: "侵蚀流域",
     modeSeascape: "海面光景",
     modeSunWater: "柔浪日海",
@@ -114,14 +111,12 @@ const translations = {
     downloadTriggered: "已触发下载；如果没有反应，已尝试打开视频预览页。",
     dragAudio: "松开即可载入音乐文件。",
     badDrop: "请拖入音频文件。",
-    defaultVisualText: "看见音乐之美",
   },
   en: {
     brand: "See Music",
     heroTitle: "See the Beauty of Music",
     chooseMusic: "Choose Music",
     urlPlaceholder: "Paste an audio or video link",
-    visualTextPlaceholder: "Enter visual text, e.g. See the Beauty of Music",
     load: "Load",
     emptyTrack: "No file selected",
     modeRing: "Spectrum Ring",
@@ -140,7 +135,6 @@ const translations = {
     modeCanyon: "Sonic Canyon",
     modeEmotionRing: "Emotion Ring",
     modeMeditation: "Meditation Field",
-    modeAnamorphic: "Spatial Type",
     modeErosion: "Erosion Flow",
     modeSeascape: "Sea Light",
     modeSunWater: "Sunlit Water",
@@ -187,7 +181,6 @@ const translations = {
     downloadTriggered: "Download triggered. If nothing happens, a preview tab was opened.",
     dragAudio: "Drop to load the music file.",
     badDrop: "Drop an audio file.",
-    defaultVisualText: "See the Beauty of Music",
   },
 };
 const hazeSeeds = Array.from({ length: 48 }, (_, index) => ({
@@ -240,7 +233,6 @@ const canyonSeeds = Array.from({ length: 70 }, (_, index) => ({
   phase: index * 0.41,
   width: 0.55 + ((index * 17) % 100) / 130,
 }));
-const emotionWords = ["看见", "流动", "呼吸", "低频", "光", "回声", "心跳", "温度", "漂浮", "旋律", "Beauty", "Pulse", "Echo", "Dream"];
 const emotionDust = Array.from({ length: 130 }, (_, index) => ({
   angle: index * 2.399963,
   radius: 0.24 + ((index * 31) % 100) / 160,
@@ -384,15 +376,15 @@ const modeTuningConfigs = {
     { key: "hue", zh: "水光色相", en: "Water Hue", min: -180, max: 180, step: 5 },
   ],
   typeflow: [
-    { key: "size", zh: "文字尺度", en: "Type Scale", min: 0.65, max: 1.7, step: 0.05 },
-    { key: "density", zh: "碎片密度", en: "Fragment Density", min: 0.35, max: 2.2, step: 0.05 },
-    { key: "line", zh: "描边粗细", en: "Outline Width", min: 0.4, max: 2.4, step: 0.05 },
+    { key: "size", zh: "流体尺度", en: "Flow Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "流线密度", en: "Flow Density", min: 0.35, max: 2.2, step: 0.05 },
+    { key: "line", zh: "水纹粗细", en: "Ripple Width", min: 0.4, max: 2.4, step: 0.05 },
     { key: "gradient", zh: "折射渐变", en: "Refraction Gradient", min: 0.4, max: 1.9, step: 0.05 },
-    { key: "saturation", zh: "文字色彩", en: "Type Color", min: 0.35, max: 1.9, step: 0.05 },
-    { key: "sharpness", zh: "碎裂锐度", en: "Shard Sharpness", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "流光色彩", en: "Flow Color", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "sharpness", zh: "碎片锐度", en: "Shard Sharpness", min: 0.35, max: 1.9, step: 0.05 },
     { key: "speed", zh: "漂浮速度", en: "Float Speed", min: 0.2, max: 2.4, step: 0.05 },
-    { key: "vibration", zh: "字浪律动", en: "Type Tide", min: 0, max: 2.4, step: 0.05 },
-    { key: "hue", zh: "文字色相", en: "Type Hue", min: -180, max: 180, step: 5 },
+    { key: "vibration", zh: "流体律动", en: "Flow Pulse", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "流光色相", en: "Flow Hue", min: -180, max: 180, step: 5 },
   ],
   canyon: [
     { key: "size", zh: "峡谷尺度", en: "Canyon Scale", min: 0.65, max: 1.7, step: 0.05 },
@@ -406,11 +398,11 @@ const modeTuningConfigs = {
     { key: "hue", zh: "地貌色相", en: "Terrain Hue", min: -180, max: 180, step: 5 },
   ],
   emotionring: [
-    { key: "size", zh: "文字环半径", en: "Word Ring", min: 0.65, max: 1.7, step: 0.05 },
-    { key: "density", zh: "词语密度", en: "Word Density", min: 0.4, max: 2.2, step: 0.05 },
-    { key: "line", zh: "文字描边", en: "Text Outline", min: 0.4, max: 2.4, step: 0.05 },
+    { key: "size", zh: "光环半径", en: "Halo Radius", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "粒子密度", en: "Particle Density", min: 0.4, max: 2.2, step: 0.05 },
+    { key: "line", zh: "轨道粗细", en: "Orbit Width", min: 0.4, max: 2.4, step: 0.05 },
     { key: "gradient", zh: "情绪渐变", en: "Emotion Gradient", min: 0.4, max: 1.9, step: 0.05 },
-    { key: "saturation", zh: "词云色彩", en: "Word Color", min: 0.35, max: 1.9, step: 0.05 },
+    { key: "saturation", zh: "光粒色彩", en: "Particle Color", min: 0.35, max: 1.9, step: 0.05 },
     { key: "sharpness", zh: "粒子锐度", en: "Particle Sharpness", min: 0.35, max: 1.9, step: 0.05 },
     { key: "speed", zh: "旋转速度", en: "Orbit Speed", min: 0.2, max: 2.4, step: 0.05 },
     { key: "vibration", zh: "情绪脉冲", en: "Emotion Pulse", min: 0, max: 2.4, step: 0.05 },
@@ -426,17 +418,6 @@ const modeTuningConfigs = {
     { key: "speed", zh: "呼吸速度", en: "Breath Speed", min: 0.2, max: 2.2, step: 0.05 },
     { key: "vibration", zh: "呼吸幅度", en: "Breath Depth", min: 0, max: 2.2, step: 0.05 },
     { key: "hue", zh: "光场色相", en: "Field Hue", min: -180, max: 180, step: 5 },
-  ],
-  anamorphic: [
-    { key: "size", zh: "字阵尺度", en: "Type Scale", min: 0.65, max: 1.7, step: 0.05 },
-    { key: "density", zh: "空间切片", en: "Depth Slices", min: 0.35, max: 2.2, step: 0.05 },
-    { key: "line", zh: "线框粗细", en: "Wire Width", min: 0.35, max: 2.4, step: 0.05 },
-    { key: "gradient", zh: "透视渐变", en: "Perspective Gradient", min: 0.4, max: 1.9, step: 0.05 },
-    { key: "saturation", zh: "字阵色彩", en: "Type Color", min: 0.35, max: 1.9, step: 0.05 },
-    { key: "sharpness", zh: "空间锐度", en: "Depth Sharpness", min: 0.35, max: 1.9, step: 0.05 },
-    { key: "speed", zh: "视角速度", en: "View Speed", min: 0.2, max: 2.4, step: 0.05 },
-    { key: "vibration", zh: "透视律动", en: "Perspective Pulse", min: 0, max: 2.4, step: 0.05 },
-    { key: "hue", zh: "标题色相", en: "Title Hue", min: -180, max: 180, step: 5 },
   ],
   erosion: [
     { key: "size", zh: "地形尺度", en: "Terrain Scale", min: 0.65, max: 1.7, step: 0.05 },
@@ -3243,26 +3224,10 @@ function drawBoilingType(width, height, features) {
   ctx.restore();
 }
 
-function visualTextCharacters() {
-  const value = visualTextInput?.value.trim() || t("defaultVisualText");
-  const normalized = value.replace(/\s+/g, " ").slice(0, 32);
-  const chars = Array.from(normalized);
-  return chars.length ? chars : Array.from(t("defaultVisualText"));
-}
-
 function drawTypeFlow(width, height, features) {
   const sensitivity = Number(sensitivityInput.value);
   const theme = tunedTheme();
   const size = Math.min(width, height);
-  const chars = visualTextCharacters();
-  const visibleChars = chars.slice(0, 32);
-  const asciiCount = visibleChars.filter((char) => /[A-Za-z0-9]/.test(char)).length;
-  const fontRatio = asciiCount > visibleChars.length * 0.55 ? 0.68 : 1.04;
-  const maxTextWidth = width * 0.72;
-  const baseFont = Math.min(size * 0.15, Math.max(38, maxTextWidth / Math.max(visibleChars.length * fontRatio, 4)));
-  const fontSize = Math.min(118, Math.max(34, baseFont));
-  const tracking = fontSize * (asciiCount > visibleChars.length * 0.55 ? 0.58 : 0.86);
-  const totalWidth = visibleChars.reduce((sum, char) => sum + (char === " " ? tracking * 0.55 : tracking), 0);
   const centerX = width * 0.5;
   const centerY = height * 0.47;
   const hueA = theme.base + visualTuning.hue;
@@ -3299,69 +3264,28 @@ function drawTypeFlow(width, height, features) {
     ctx.stroke();
   }
 
-  ctx.font = `900 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  for (let ghost = 5; ghost >= 1; ghost -= 1) {
-    const opacity = 0.018 + ghost * 0.011 * visualTuning.gradient;
-    const offset = ghost * size * (0.025 + features.mid * 0.018);
-    let xCursor = centerX - totalWidth * 0.5;
-    for (let index = 0; index < visibleChars.length; index += 1) {
-      const char = visibleChars[index];
-      const step = char === " " ? tracking * 0.55 : tracking;
-      const x = xCursor + step * 0.5;
-      xCursor += step;
-      if (char === " ") continue;
-      const phase = index * 0.9 + ghost * 0.64;
-      const y = centerY + Math.sin(frame * 0.018 + phase) * offset + ghost * size * 0.018;
-      ctx.fillStyle = `hsla(${hueC + ghost * 18}, 96%, 70%, ${opacity})`;
-      ctx.fillText(char, x + Math.sin(frame * 0.01 + phase) * offset * 0.35, y);
-    }
-  }
-
-  let cursor = centerX - totalWidth * 0.5;
-  for (let index = 0; index < visibleChars.length; index += 1) {
-    const char = visibleChars[index];
-    const step = char === " " ? tracking * 0.55 : tracking;
-    const x = cursor + step * 0.5;
-    cursor += step;
-    if (char === " ") continue;
-
-    const bin = Math.floor((index / Math.max(1, visibleChars.length - 1)) * frequencyData.length * 0.68);
-    const amp = ((frequencyData[bin] || 0) / 255) ** 1.08;
-    const lift = amp * size * 0.09 * sensitivity + tide * size * 0.018;
-    const drift = Math.sin(frame * 0.018 + index * 0.83) * size * 0.018 + features.mid * Math.sin(index * 1.7) * size * 0.03;
-    const y = centerY - lift + Math.sin(frame * 0.013 + index * 1.1) * size * 0.025;
-    const shear = Math.sin(frame * 0.012 + index * 0.7) * (0.08 + features.mid * 0.12);
-    const rotate = Math.sin(frame * 0.009 + index) * 0.08 + features.beat * 0.035;
-
+  const ribbons = Math.round(7 + visualTuning.density * 11);
+  for (let ribbon = 0; ribbon < ribbons; ribbon += 1) {
+    const depth = ribbon / Math.max(1, ribbons - 1);
+    const yBase = centerY - size * 0.16 + depth * size * 0.32 + Math.sin(frame * 0.011 + ribbon) * tide * size * 0.04;
     ctx.save();
-    ctx.translate(x + drift, y);
-    ctx.rotate(rotate);
-    ctx.transform(1, features.mid * 0.04, shear, 1, 0, 0);
-    ctx.fillStyle = `rgba(0, 0, 0, ${0.35 + features.bass * 0.22})`;
-    ctx.fillText(char, fontSize * 0.07, fontSize * 0.09);
-    ctx.lineWidth = (1.6 + amp * 3.5 + features.beat * 1.2) * visualTuning.line;
-    ctx.strokeStyle = `hsla(${hueC + amp * 80}, 100%, 78%, ${0.24 + amp * 0.42})`;
-    ctx.strokeText(char, 0, 0);
-    const face = ctx.createLinearGradient(0, -fontSize * 0.62, 0, fontSize * 0.64);
-    face.addColorStop(0, `hsla(${hueA + amp * 48}, 100%, ${84 + amp * 8}%, ${0.82 + amp * 0.16})`);
-    face.addColorStop(0.48, `hsla(${hueB}, 94%, ${62 + amp * 14}%, ${0.74 + amp * 0.18})`);
-    face.addColorStop(1, `hsla(${hueC}, 95%, ${44 + features.bass * 16}%, ${0.62 + amp * 0.18})`);
-    ctx.fillStyle = face;
-    ctx.fillText(char, 0, 0);
-
-    const shardCount = Math.round((4 + amp * 10 + features.treble * 14) * visualTuning.density);
-    for (let shard = 0; shard < shardCount; shard += 1) {
-      const seed = typeFlowDust[(index * 11 + shard * 7) % typeFlowDust.length];
-      const angle = seed.phase + frame * 0.018 + features.treble * 1.8;
-      const distance = fontSize * (0.34 + seed.x * 0.55) * (0.4 + features.treble + amp * 0.7);
-      const sx = Math.cos(angle) * distance;
-      const sy = Math.sin(angle * 1.27) * distance * 0.55 + fontSize * (seed.y - 0.5) * 0.7;
-      ctx.fillStyle = `hsla(${hueA + seed.phase * 24}, 100%, 78%, ${0.04 + features.treble * 0.23 + amp * 0.12})`;
-      ctx.fillRect(sx, sy, seed.size * (1 + features.treble * 2.5) * visualTuning.sharpness, 1.1 * visualTuning.line);
+    ctx.beginPath();
+    for (let i = 0; i <= 150; i += 1) {
+      const t = i / 150;
+      const bin = Math.floor(t * frequencyData.length * 0.72);
+      const amp = ((frequencyData[bin] || 0) / 255) ** 1.08;
+      const x = width * (t - 0.04);
+      const curl = Math.sin(t * Math.PI * (2.5 + depth * 5.4) + frame * (0.014 + depth * 0.012) + ribbon) * size * (0.018 + amp * 0.055) * sensitivity;
+      const swell = Math.sin(frame * 0.01 + ribbon * 1.8 + t * 4) * features.mid * size * 0.04;
+      const y = yBase - amp * size * 0.09 + curl + swell;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
+    ctx.strokeStyle = `hsla(${hueC + depth * 95}, 100%, ${62 + depth * 18}%, ${0.14 + features.treble * 0.2})`;
+    ctx.lineWidth = (1.2 + depth * 3.2 + features.beat * 1.4) * visualTuning.line;
+    ctx.shadowColor = `hsla(${hueA + depth * 50}, 100%, 70%, ${0.24 + features.energy * 0.2})`;
+    ctx.shadowBlur = size * (0.012 + features.treble * 0.02) * visualTuning.gradient;
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -3385,14 +3309,17 @@ function drawTypeFlow(width, height, features) {
   ctx.closePath();
   ctx.fill();
 
-  for (const dust of typeFlowDust) {
-    if (dust.x > visualTuning.density * 0.55) continue;
+  for (let index = 0; index < typeFlowDust.length; index += 1) {
+    const dust = typeFlowDust[index];
+    if (dust.x > visualTuning.density * 0.58) continue;
+    const bin = Math.floor((index / typeFlowDust.length) * frequencyData.length * 0.72);
+    const amp = ((frequencyData[bin] || 0) / 255) ** 1.12;
     const x = (dust.x * 1.18 - 0.09) * width + Math.sin(frame * 0.008 + dust.phase) * size * 0.025;
-    const y = (dust.y * 0.82 + 0.08) * height + Math.cos(frame * 0.011 + dust.phase) * features.mid * size * 0.06;
-    const alpha = 0.025 + features.treble * 0.12 + features.beat * 0.04;
+    const y = (dust.y * 0.74 + 0.12) * height - amp * size * 0.08 + Math.cos(frame * 0.011 + dust.phase) * features.mid * size * 0.06;
+    const alpha = 0.025 + features.treble * 0.14 + features.beat * 0.04 + amp * 0.1;
     ctx.fillStyle = `hsla(${hueB + dust.phase * 13}, 96%, 76%, ${alpha})`;
     ctx.beginPath();
-    ctx.arc(x, y, dust.size * (0.8 + features.treble * 1.7), 0, Math.PI * 2);
+    ctx.arc(x, y, dust.size * (0.8 + features.treble * 1.7 + amp * 2.1) * visualTuning.sharpness, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -3403,15 +3330,6 @@ function drawTypeFlow(width, height, features) {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
-}
-
-function visualPhraseWords() {
-  const input = visualTextInput?.value.trim();
-  const phrase = input || t("defaultVisualText");
-  const parts = phrase.split(/\s+/).filter(Boolean);
-  if (parts.length > 1) return parts.slice(0, 12);
-  const chars = Array.from(phrase).filter((char) => char.trim());
-  return chars.length > 1 ? chars.slice(0, 18) : emotionWords;
 }
 
 function drawSonicCanyon(width, height, features) {
@@ -3491,8 +3409,7 @@ function drawEmotionRing(width, height, features) {
   const size = Math.min(width, height);
   const cx = width * 0.5;
   const cy = height * 0.5;
-  const words = visualPhraseWords();
-  const count = Math.max(8, Math.round(words.length * visualTuning.density));
+  const count = Math.max(18, Math.round(42 * visualTuning.density));
   const radius = size * (0.25 + visualTuning.size * 0.08 + features.bass * 0.08);
   const hueA = theme.base + visualTuning.hue;
   const hueB = theme.second + visualTuning.hue * 0.4;
@@ -3516,26 +3433,30 @@ function drawEmotionRing(width, height, features) {
     ctx.fill();
   }
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
   for (let i = 0; i < count; i += 1) {
-    const word = words[i % words.length];
     const angle = (Math.PI * 2 * i) / count + frame * 0.004 * visualTuning.speed;
     const bin = Math.floor((i / count) * frequencyData.length * 0.7);
     const amp = ((frequencyData[bin] || 0) / 255) ** 1.1;
     const r = radius + amp * size * 0.09 + Math.sin(frame * 0.015 + i) * features.mid * size * 0.025;
     const x = cx + Math.cos(angle) * r;
     const y = cy + Math.sin(angle) * r;
-    const fontSize = Math.max(13, size * (0.024 + amp * 0.018) * visualTuning.size);
+    const particleSize = size * (0.008 + amp * 0.018) * visualTuning.size;
+    const tangent = angle + Math.PI / 2;
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(angle + Math.PI / 2);
-    ctx.font = `800 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    ctx.rotate(tangent);
+    ctx.fillStyle = `hsla(${hueA + i * 13 + amp * 60}, 96%, ${62 + amp * 22}%, ${0.28 + amp * 0.44})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.08 + amp * 0.12})`;
     ctx.lineWidth = (0.8 + amp * 1.8) * visualTuning.line;
-    ctx.strokeStyle = `rgba(255,255,255,${0.12 + amp * 0.18})`;
-    ctx.fillStyle = `hsla(${hueA + i * 13 + amp * 60}, 96%, ${62 + amp * 22}%, ${0.55 + amp * 0.36})`;
-    ctx.strokeText(word, 0, 0);
-    ctx.fillText(word, 0, 0);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, particleSize * (1.7 + features.beat * 0.4), particleSize * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-particleSize * 2.2, 0);
+    ctx.lineTo(particleSize * (2.2 + amp * 4.2), 0);
+    ctx.strokeStyle = `hsla(${hueB + i * 9}, 100%, 72%, ${0.12 + amp * 0.28})`;
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -3589,60 +3510,6 @@ function drawMeditationField(width, height, features) {
   ctx.restore();
 }
 
-function drawAnamorphicType(width, height, features) {
-  const theme = tunedTheme();
-  const size = Math.min(width, height);
-  const text = (visualTextInput?.value.trim() || t("defaultVisualText")).slice(0, 18);
-  const cx = width * 0.5;
-  const cy = height * 0.48;
-  const hueA = theme.base + visualTuning.hue;
-  const hueB = theme.second + visualTuning.hue * 0.4;
-  const slices = Math.round(14 + visualTuning.density * 18);
-  const baseFont = Math.min(112, Math.max(34, width / Math.max(7, Array.from(text).length * 0.75)));
-
-  ctx.save();
-  const bg = ctx.createLinearGradient(0, 0, width, height);
-  bg.addColorStop(0, `hsla(${hueA + 210}, 74%, 5%, 1)`);
-  bg.addColorStop(0.5, `hsla(${hueB}, 74%, ${8 + features.mid * 8}%, 1)`);
-  bg.addColorStop(1, "rgba(0,0,0,1)");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.globalCompositeOperation = "screen";
-  for (let i = slices; i >= 0; i -= 1) {
-    const depth = i / Math.max(1, slices);
-    const z = 1 - depth;
-    const scale = (0.32 + z * 0.95) * visualTuning.size;
-    const y = cy + (depth - 0.45) * size * 0.52 + Math.sin(frame * 0.012 * visualTuning.speed + i) * features.mid * size * 0.025;
-    const x = cx + Math.sin(frame * 0.006 * visualTuning.speed + depth * 4.0) * size * (0.05 + features.bass * 0.05);
-    const skew = (depth - 0.5) * (0.62 + features.bass * 0.2);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.transform(scale, 0.05 * features.mid, skew * 0.18, scale * (0.38 + depth * 0.55), 0, 0);
-    ctx.font = `900 ${baseFont}px Inter, ui-sans-serif, system-ui, sans-serif`;
-    ctx.lineWidth = (1 + depth * 2.4) * visualTuning.line;
-    ctx.strokeStyle = `hsla(${hueA + depth * 90}, 100%, ${62 + depth * 18}%, ${0.07 + z * 0.2})`;
-    ctx.fillStyle = `hsla(${hueB + depth * 50}, 96%, ${50 + z * 32}%, ${0.08 + z * 0.34})`;
-    ctx.strokeText(text, 0, 0);
-    if (i % 2 === 0 || depth > 0.72) ctx.fillText(text, 0, 0);
-    ctx.restore();
-  }
-
-  const gridLines = Math.round(8 + visualTuning.density * 8);
-  for (let i = 0; i < gridLines; i += 1) {
-    const t = i / Math.max(1, gridLines - 1);
-    ctx.strokeStyle = `hsla(${hueA + 30}, 96%, 68%, ${0.035 + features.treble * 0.045})`;
-    ctx.lineWidth = visualTuning.line;
-    ctx.beginPath();
-    ctx.moveTo(width * (0.18 + t * 0.64), height);
-    ctx.lineTo(cx + (t - 0.5) * size * 0.18, height * 0.18);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
 function render() {
   frame += visualTuning.speed;
   const width = canvas.clientWidth;
@@ -3682,7 +3549,6 @@ function render() {
   if (currentMode === "canyon") drawSonicCanyon(width, height, features);
   if (currentMode === "emotionring") drawEmotionRing(width, height, features);
   if (currentMode === "meditation") drawMeditationField(width, height, features);
-  if (currentMode === "anamorphic") drawAnamorphicType(width, height, features);
 
   ctx.restore();
   ctx.filter = "none";
