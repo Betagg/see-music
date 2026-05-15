@@ -64,6 +64,7 @@ const translations = {
     modeErosion: "侵蚀流域",
     modeSeascape: "海面光景",
     modeSunWater: "柔浪日海",
+    modeCoastal: "海岸风景",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -128,6 +129,7 @@ const translations = {
     modeErosion: "Erosion Flow",
     modeSeascape: "Sea Light",
     modeSunWater: "Sunlit Water",
+    modeCoastal: "Coastal Landscape",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -235,6 +237,7 @@ let dragDepth = 0;
 let webglState;
 let seascapeState;
 let sunWaterState;
+let coastalState;
 let webglSupported = true;
 const tuningDefaults = {
   size: 1,
@@ -365,6 +368,16 @@ const modeTuningConfigs = {
     { key: "sharpness", zh: "闪光柔度", en: "Glint Softness", min: 0.35, max: 1.6, step: 0.05 },
     { key: "vibration", zh: "浪涛律动", en: "Wave Rhythm", min: 0, max: 1.8, step: 0.05 },
     { key: "hue", zh: "晨昏色相", en: "Dawn Hue", min: -180, max: 180, step: 5 },
+  ],
+  coastal: [
+    { key: "size", zh: "景别尺度", en: "Scene Scale", min: 0.7, max: 1.6, step: 0.05 },
+    { key: "density", zh: "分段密度", en: "Mosaic Density", min: 0.45, max: 2.1, step: 0.05 },
+    { key: "line", zh: "笔触粗细", en: "Stroke Width", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "gradient", zh: "天空色带", en: "Sky Palette", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "风景色彩", en: "Landscape Color", min: 0.35, max: 1.7, step: 0.05 },
+    { key: "sharpness", zh: "拼贴锐度", en: "Mosaic Edge", min: 0.35, max: 1.7, step: 0.05 },
+    { key: "vibration", zh: "海风律动", en: "Coastal Breeze", min: 0, max: 1.9, step: 0.05 },
+    { key: "hue", zh: "季节色相", en: "Season Hue", min: -180, max: 180, step: 5 },
   ],
 };
 let visualTuning = { ...tuningDefaults };
@@ -521,7 +534,7 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   webglCanvas.width = canvas.width;
   webglCanvas.height = canvas.height;
-  const gl = webglState?.gl || seascapeState?.gl || sunWaterState?.gl;
+  const gl = webglState?.gl || seascapeState?.gl || sunWaterState?.gl || coastalState?.gl;
   if (gl) {
     gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
     resetErosionFeedback();
@@ -1118,6 +1131,238 @@ void main() {
 }
 `;
 
+const coastalFragmentShader = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_treble;
+uniform float u_energy;
+uniform float u_beat;
+uniform vec3 u_theme;
+uniform float u_scale;
+uniform float u_density;
+uniform float u_gradient;
+uniform float u_saturation;
+uniform float u_sharpness;
+uniform float u_line;
+
+vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(6.28318 * (c * t + d));
+}
+
+vec3 skyPalette(float t) {
+  vec3 base = palette(
+    t,
+    vec3(0.26, 0.76, 0.77),
+    vec3(1.0, 0.3, 1.0),
+    vec3(0.8, 0.4, 0.7),
+    vec3(0.0, 0.12, 0.54)
+  );
+  vec3 themeTint = palette(u_theme.x + t * 0.12, vec3(0.52), vec3(0.35), vec3(1.0), vec3(0.0, 0.24, 0.4));
+  return mix(base, themeTint, 0.18 * u_gradient);
+}
+
+vec3 hueColor(float v) {
+  return 0.6 + 0.76 * cos(6.3 * v + vec3(0.0, 23.0, 21.0));
+}
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 hash22(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+vec2 rotate2D(vec2 st, float a) {
+  float s = sin(a);
+  float c = cos(a);
+  return mat2(c, -s, s, c) * st;
+}
+
+float softBar(float a, float b, float s) {
+  return smoothstep(a - s, a + s, b);
+}
+
+float noise2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(dot(hash22(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)), dot(hash22(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+    mix(dot(hash22(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)), dot(hash22(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+vec3 drawSky(vec2 uv, vec2 sunShift, float sm) {
+  vec2 u = uv + sunShift;
+  float rings = 38.0 + u_density * 24.0;
+  vec2 id = vec2((length(u) + 0.01) * rings, 0.0);
+  float segments = max(3.0, floor(id.x) * (0.065 + u_density * 0.025));
+  float ringShift = (hash12(floor(id.xx)) * 0.5 + 0.25) * (u_time + 10.0) * (0.16 + u_mid * 0.06);
+  vec2 turned = rotate2D(u, ringShift);
+  id.y = atan(turned.y, turned.x) * segments;
+  vec2 local = fract(id);
+  id -= local;
+
+  vec2 center = vec2(
+    cos((id.y + 0.5) / segments) * (id.x + 0.5) / rings,
+    sin((id.y + 0.5) / segments) * (id.x + 0.5) / rings
+  );
+  center = rotate2D(center, -ringShift) - sunShift;
+
+  float cloud = noise2(center * vec2(0.5, 1.0) - vec2(u_time * (0.1 + u_mid * 0.04), 0.0));
+  cloud *= step(-0.25, center.y);
+  cloud = smoothstep(0.038, 0.062, cloud + u_treble * 0.02);
+  local += noise2(local * vec2(1.0, 4.0) + id) * vec2(0.7, 0.2);
+
+  vec3 sky = skyPalette(sin(length(u) - 0.1 + u_theme.x * 0.18)) * 0.36;
+  vec3 tile = mix(skyPalette(sin(length(u) - 0.1) + (hash12(id) - 0.5) * 0.15), vec3(1.0), cloud * 0.85);
+  float mask = softBar(abs(local.x - 0.5), 0.4, sm * rings / max(u_line, 0.2))
+    * softBar(abs(local.y - 0.5), 0.48, sm * segments / max(u_line, 0.2));
+  return mix(sky, tile, mask);
+}
+
+vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm) {
+  float cloud = noise2(-sunShift * vec2(0.5, 1.0) - vec2(u_time * 0.1, 0.0));
+  cloud = 1.0 - smoothstep(0.0, 0.15, cloud) * 0.5;
+  vec2 u = uv * vec2(1.0, 15.0);
+  vec2 id = floor(u);
+
+  for (int j = 0; j < 3; j++) {
+    float offset = 1.0 - float(j);
+    if (id.y + offset < -5.0) {
+      vec2 local = fract(u) - 0.5;
+      float wave = sin(uv.x * (9.0 + u_density * 4.0) - u_time * (1.0 + u_mid * 0.85) + id.y + offset);
+      local.y = (local.y + wave * (0.16 + u_bass * 0.08) - offset) * 4.0;
+      float seed = hash12(vec2(id.y + offset, floor(local.y)));
+      float xDensity = 5.0 + seed * 4.0 + u_density * 2.0;
+      float yDensity = 24.0 + u_density * 8.0;
+      local.x = uv.x * xDensity + sunShift.x * 8.0 + sin(u_time * (0.22 + seed * 0.7)) * 0.45;
+      float track = 0.78 * smoothstep(5.0, 0.0, abs(floor(local.x))) * cloud + 0.08 + u_beat * 0.05;
+      vec3 baseWater = mix(vec3(0.0, 0.08, 0.42), vec3(0.32, 0.32, 0.02), track);
+      color = mix(color, baseWater, softBar(local.y, 0.0, sm * yDensity / max(u_line, 0.2)));
+      local += noise2(local * vec2(3.0, 0.5)) * vec2(0.1, 0.6);
+      vec3 stroke = mix(hueColor(hash12(floor(local)) * 0.1 + 0.56 + u_theme.y * 0.04) * (1.05 + floor(local.y) * 0.14), vec3(1.0, 0.95, 0.08), track);
+      float strokeMask = softBar(local.y, 0.0, sm * xDensity / max(u_line, 0.2))
+        * softBar(abs(fract(local.x) - 0.5), 0.48, sm * xDensity / max(u_line, 0.2))
+        * softBar(abs(fract(local.y) - 0.5), 0.3, sm * yDensity / max(u_line, 0.2));
+      color = mix(color, stroke, strokeMask);
+    }
+  }
+
+  return color;
+}
+
+vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm) {
+  float seed = (hash12(id) - 0.5) * 0.25 + 0.5;
+  vec2 local = u;
+  local -= vec2(0.3, 0.5 - seed * 0.4);
+  float breeze = sin((u_time * (0.7 + u_mid * 0.45) + seed * 2.0 - id.x * 0.05 - id.y * 0.05) * 2.0 + id.y * 0.5);
+  local.x += breeze * (local.y + 0.5) * (0.28 + u_bass * 0.08);
+  vec2 d = abs(local) - vec2(0.02, 0.5 - seed * 0.5);
+  float blade = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+  blade -= noise2(local * 7.0 + id) * 0.1;
+  float alpha = softBar(blade, 0.1, sm * 5.2);
+  vec3 outline = grassColor * 0.24;
+  vec3 fill = grassColor * (1.05 + local.y * 1.8) * (1.7 - seed * 2.1);
+  vec3 c = mix(outline, fill, softBar(blade, 0.04, sm * 5.2));
+  return vec4(c, alpha);
+}
+
+vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
+  float swing = sin(u_time * (0.22 + u_mid * 0.12));
+  vec2 u = uv + treePos;
+  u.x -= sin(u.y + 1.0) * 0.16 * (swing + 0.75);
+  u += noise2(u * 4.5 - 7.0) * 0.18;
+
+  vec2 trunkGrid = u * vec2(10.0, 60.0);
+  float trunkSeed = hash12(floor(trunkGrid.yy));
+  trunkGrid.x += trunkSeed * 0.01;
+  vec2 trunkLocal = fract(trunkGrid);
+  float trunkMask = softBar(abs(trunkGrid.x - 0.5), 0.5, sm * 10.0) * step(abs(trunkGrid.y + 20.0), 45.0);
+  vec3 trunk = mix(vec3(0.07), vec3(0.5, 0.3, 0.02) * (0.4 + trunkSeed * 0.4), softBar(abs(trunkLocal.y - 0.5), 0.4, sm * 60.0) * softBar(abs(trunkLocal.x - 0.5), 0.45, sm * 10.0));
+  vec4 result = vec4(trunk, trunkMask);
+
+  for (int layer = 0; layer < 4; layer++) {
+    float xs = float(layer);
+    vec2 crown = uv + treePos + vec2(xs / 30.0 * 0.5 - (swing + 0.75) * 0.12, -0.7);
+    crown += noise2(crown * vec2(2.0, 1.0) + vec2(-u_time * 0.32 + xs * 0.05, 0.0)) * vec2(-0.2, 0.08) * smoothstep(0.5, -1.0, crown.y + 0.7);
+    vec2 tile = crown * vec2(30.0, 1.0);
+    float rowSeed = hash12(floor(tile.xx) + xs * 1.4);
+    float rows = 5.0 + rowSeed * 7.0;
+    tile.y *= rows;
+    vec2 tileSave = tile;
+    vec2 local = fract(tile);
+    float tileSeed = hash12(tile - local);
+    vec2 cell = (tile - local) / vec2(30.0, rows) + vec2(0.0, 0.7);
+    float top = step(0.0, cell.y) * step(length(cell), 0.45);
+    float bottom = step(cell.y, 0.0) * step(-0.7 + sin((floor(crown.x) + xs * 0.5) * 15.0) * 0.2, cell.y);
+    float mask = (top + bottom) * step(abs(cell.x), 0.5) * softBar(abs(local.x - 0.5), 0.35, sm * 15.0);
+    local += noise2(tileSave * vec2(1.0, 3.0)) * vec2(0.3);
+    vec3 leaf = hueColor((tileSeed + (sin(u_time * 0.08) * 0.5 + 0.5)) * 0.2 + u_theme.z * 0.1) - cell.x;
+    vec3 crownColor = mix(leaf * 0.15, leaf * 0.58 * (0.7 + xs * 0.2), softBar(abs(local.y - 0.5), 0.47, sm * rows) * softBar(abs(local.x - 0.5), 0.2, sm * 30.0));
+    result = mix(result, vec4(crownColor, mask), mask);
+  }
+
+  return result;
+}
+
+void main() {
+  vec2 r = u_resolution.xy;
+  vec2 uv = (gl_FragCoord.xy * 2.0 - r) / r.y;
+  uv /= max(u_scale, 0.25);
+  float sm = 3.0 / r.y;
+  float aspect = r.x / r.y;
+  vec2 sunPos = vec2(aspect * 0.42, -0.53 + u_bass * 0.02);
+  vec2 treePos = vec2(-aspect * 0.42, -0.2);
+  vec2 sunShift = rotate2D(sunPos, noise2(uv + u_time * (0.1 + u_mid * 0.04)) * (0.18 + u_energy * 0.04));
+
+  vec3 color = drawSky(uv, sunShift, sm);
+  if (uv.y < -0.35) {
+    color = drawWater(color, uv, sunShift, sm);
+  }
+
+  vec2 grassUv = uv + noise2(uv * 2.0) * 0.1 + vec2(0.0, sin(uv.x + 3.0) * 0.36 + 0.8);
+  vec3 grassColor = mix(vec3(0.7, 0.6, 0.2), vec3(0.03, 0.78, 0.12), sin(u_time * 0.08 + u_mid) * 0.5 + 0.5);
+  color = mix(color, grassColor * 0.38, step(grassUv.y, 0.0));
+
+  float grassMask = 0.0;
+  vec2 grassGrid = grassUv * vec2(60.0, 60.0 / 3.5);
+  if (grassGrid.y < 1.2) {
+    for (int yi = 0; yi < 3; yi++) {
+      for (int xi = 0; xi < 5; xi++) {
+        vec2 id = floor(grassGrid) + vec2(float(xi) - 2.0, -float(yi));
+        vec2 local = (fract(grassGrid) + vec2(1.0 - (float(xi) - 2.0), float(yi))) / vec2(5.0, 3.0);
+        vec4 blade = drawGrassBlade(local, id, grassColor, sm);
+        float front = step(id.y, -1.0);
+        color = mix(color, blade.rgb, blade.a * front);
+        grassMask = max(grassMask, blade.a * step(id.y, -5.0));
+      }
+    }
+  }
+
+  if (abs(uv.x + treePos.x - 0.1 - sin(u_time * 0.22) * 0.08) < 0.6) {
+    vec4 tree = drawTree(uv, treePos, sm);
+    color = mix(color, tree.rgb, tree.a * (1.0 - grassMask));
+  }
+
+  color *= 0.72 + 0.2 * u_gradient + u_beat * 0.04;
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, u_saturation);
+  color = mix(vec3(0.5), color, 0.74 + u_sharpness * 0.18);
+  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -1397,8 +1642,92 @@ function drawSunWater(features) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
+function initCoastalWebgl() {
+  if (coastalState || !webglSupported) return coastalState;
+  const gl = webglCanvas.getContext("webgl", {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    webglSupported = false;
+    return null;
+  }
+
+  try {
+    const program = createProgram(gl, erosionVertexShader, coastalFragmentShader);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    coastalState = {
+      gl,
+      program,
+      buffer,
+      position: gl.getAttribLocation(program, "a_position"),
+      uniforms: {
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        time: gl.getUniformLocation(program, "u_time"),
+        bass: gl.getUniformLocation(program, "u_bass"),
+        mid: gl.getUniformLocation(program, "u_mid"),
+        treble: gl.getUniformLocation(program, "u_treble"),
+        energy: gl.getUniformLocation(program, "u_energy"),
+        beat: gl.getUniformLocation(program, "u_beat"),
+        theme: gl.getUniformLocation(program, "u_theme"),
+        scale: gl.getUniformLocation(program, "u_scale"),
+        density: gl.getUniformLocation(program, "u_density"),
+        gradient: gl.getUniformLocation(program, "u_gradient"),
+        saturation: gl.getUniformLocation(program, "u_saturation"),
+        sharpness: gl.getUniformLocation(program, "u_sharpness"),
+        line: gl.getUniformLocation(program, "u_line"),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    webglSupported = false;
+    return null;
+  }
+
+  return coastalState;
+}
+
+function drawCoastalLandscape(features) {
+  const state = initCoastalWebgl();
+  if (!state) return;
+  const { gl, program, buffer, position, uniforms } = state;
+  const theme = tunedTheme();
+  const sensitivity = Number(sensitivityInput.value);
+  gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
+  gl.uniform1f(uniforms.time, frame / 60);
+  gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
+  gl.uniform1f(uniforms.mid, Math.min(1, features.mid * sensitivity));
+  gl.uniform1f(uniforms.treble, Math.min(1, features.treble * sensitivity));
+  gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
+  gl.uniform1f(uniforms.beat, features.beat);
+  gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.uniform1f(uniforms.scale, visualTuning.size);
+  gl.uniform1f(uniforms.density, visualTuning.density);
+  gl.uniform1f(uniforms.gradient, visualTuning.gradient);
+  gl.uniform1f(uniforms.saturation, visualTuning.saturation);
+  gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
+  gl.uniform1f(uniforms.line, visualTuning.line);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
 function isWebglModeName(mode) {
-  return mode === "erosion" || mode === "seascape" || mode === "sunwater";
+  return mode === "erosion" || mode === "seascape" || mode === "sunwater" || mode === "coastal";
 }
 
 function drawRing(width, height, features) {
@@ -2509,6 +2838,7 @@ function render() {
     if (currentMode === "erosion") drawErosionFlow(features);
     if (currentMode === "seascape") drawSeascape(features);
     if (currentMode === "sunwater") drawSunWater(features);
+    if (currentMode === "coastal") drawCoastalLandscape(features);
     requestAnimationFrame(render);
     return;
   }
