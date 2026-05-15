@@ -10,6 +10,9 @@ const emptyState = document.querySelector("#emptyState");
 const modeButtons = document.querySelectorAll(".mode-button");
 const themeButtons = document.querySelectorAll(".theme-button");
 const sensitivityInput = document.querySelector("#sensitivity");
+const tuningInputs = document.querySelectorAll("[data-tuning]");
+const tuningValueNodes = document.querySelectorAll("[data-tuning-value]");
+const resetTuningButton = document.querySelector("#resetTuningButton");
 const bassMeter = document.querySelector("#bassMeter");
 const midMeter = document.querySelector("#midMeter");
 const trebleMeter = document.querySelector("#trebleMeter");
@@ -62,6 +65,17 @@ const translations = {
     themeEmber: "炽热",
     themeMono: "黑金",
     sensitivity: "灵敏度",
+    tuningTitle: "视觉调优",
+    resetTuning: "重置",
+    tuneSize: "大小",
+    tuneHue: "颜色",
+    tuneGradient: "渐变",
+    tuneSaturation: "饱和度",
+    tuneSharpness: "锐度",
+    tuneLine: "线宽",
+    tuneDensity: "密度",
+    tuneSpeed: "快慢",
+    tuneVibration: "振动",
     bass: "低频",
     mid: "中频",
     treble: "高频",
@@ -122,6 +136,17 @@ const translations = {
     themeEmber: "Ember",
     themeMono: "Black Gold",
     sensitivity: "Sensitivity",
+    tuningTitle: "Visual Tuning",
+    resetTuning: "Reset",
+    tuneSize: "Size",
+    tuneHue: "Color",
+    tuneGradient: "Gradient",
+    tuneSaturation: "Saturation",
+    tuneSharpness: "Sharpness",
+    tuneLine: "Line",
+    tuneDensity: "Density",
+    tuneSpeed: "Speed",
+    tuneVibration: "Vibration",
     bass: "Bass",
     mid: "Mid",
     treble: "Treble",
@@ -222,6 +247,76 @@ let currentLanguage = "zh";
 let dragDepth = 0;
 let webglState;
 let webglSupported = true;
+const tuningDefaults = {
+  size: 1,
+  hue: 0,
+  gradient: 1,
+  saturation: 1,
+  sharpness: 1,
+  line: 1,
+  density: 1,
+  speed: 1,
+  vibration: 1,
+};
+let visualTuning = { ...tuningDefaults };
+
+function readVisualTuning() {
+  tuningInputs.forEach((input) => {
+    visualTuning[input.dataset.tuning] = Number(input.value);
+  });
+  return visualTuning;
+}
+
+function formatTuningValue(key, value) {
+  if (key === "hue") return `${Math.round(value)}°`;
+  return value.toFixed(2);
+}
+
+function updateTuningLabels() {
+  tuningValueNodes.forEach((node) => {
+    const key = node.dataset.tuningValue;
+    node.textContent = formatTuningValue(key, visualTuning[key] ?? tuningDefaults[key]);
+  });
+}
+
+function resetVisualTuning() {
+  tuningInputs.forEach((input) => {
+    input.value = tuningDefaults[input.dataset.tuning];
+  });
+  readVisualTuning();
+  updateTuningLabels();
+  resetErosionFeedback();
+}
+
+function tunedTheme() {
+  const baseTheme = themes[currentTheme];
+  const hue = visualTuning.hue || 0;
+  return {
+    ...baseTheme,
+    base: baseTheme.base + hue,
+    second: baseTheme.second + hue * visualTuning.gradient,
+    third: baseTheme.third + hue * 0.7,
+  };
+}
+
+function tunedFeatures(features) {
+  const vibration = visualTuning.vibration;
+  return {
+    bass: Math.min(1.6, features.bass * vibration),
+    mid: Math.min(1.6, features.mid * vibration),
+    treble: Math.min(1.6, features.treble * vibration),
+    energy: Math.min(1.6, features.energy * (0.65 + vibration * 0.35)),
+    beat: Math.min(1.8, features.beat * (0.5 + vibration * 0.55)),
+  };
+}
+
+function applyCanvasTuning(width, height) {
+  ctx.save();
+  ctx.filter = `saturate(${visualTuning.saturation}) contrast(${0.85 + visualTuning.sharpness * 0.24})`;
+  ctx.translate(width / 2, height / 2);
+  ctx.scale(visualTuning.size, visualTuning.size);
+  ctx.translate(-width / 2, -height / 2);
+}
 
 function t(key) {
   return translations[currentLanguage][key] || translations.zh[key] || key;
@@ -329,7 +424,7 @@ function audioFeatures() {
 }
 
 function clearStage(width, height, features) {
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const alpha = 0.28;
   ctx.fillStyle = `rgba(${theme.ink}, ${alpha + features.energy * 0.12})`;
   ctx.fillRect(0, 0, width, height);
@@ -358,6 +453,12 @@ uniform float u_beat;
 uniform vec3 u_theme;
 uniform sampler2D u_previous;
 uniform float u_feedback;
+uniform float u_scale;
+uniform float u_density;
+uniform float u_gradient;
+uniform float u_saturation;
+uniform float u_sharpness;
+uniform float u_line;
 varying vec2 v_uv;
 
 float hash(vec2 p) {
@@ -431,7 +532,7 @@ float heightField(vec2 p) {
 void main() {
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   vec2 p = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / min(u_resolution.x, u_resolution.y);
-  p *= 1.78;
+  p *= 1.78 / max(u_scale, 0.2);
 
   float h = heightField(p);
   float e = 0.006;
@@ -442,11 +543,11 @@ void main() {
   float shade = clamp(dot(n, light), 0.0, 1.0);
   float channels = channelMask(p);
   float pulse = terrainPulse();
-  float contours = 1.0 - smoothstep(0.0, 0.04 + u_mid * 0.02, abs(fract(h * (7.0 + pulse * 5.0)) - 0.5));
-  float sediment = fbm(p * (7.5 + pulse * 2.0) + vec2(sin(u_time * 0.24), cos(u_time * 0.18)) * 0.18);
+  float contours = 1.0 - smoothstep(0.0, (0.046 + u_mid * 0.02) / max(u_line, 0.2), abs(fract(h * (5.5 + u_density * 2.0 + pulse * 5.0)) - 0.5));
+  float sediment = fbm(p * (5.8 + u_density * 1.7 + pulse * 2.0) + vec2(sin(u_time * 0.24), cos(u_time * 0.18)) * 0.18);
   float grain = hash(gl_FragCoord.xy + floor(u_time * 30.0)) - 0.5;
 
-  vec3 deep = hsv2rgb(vec3(u_theme.x + 0.48, 0.72, 0.08 + u_energy * 0.05));
+  vec3 deep = hsv2rgb(vec3(u_theme.x + 0.48 * u_gradient, 0.72, 0.08 + u_energy * 0.05));
   vec3 silt = hsv2rgb(vec3(u_theme.y, 0.62, 0.16 + h * 0.18 + u_bass * 0.06));
   vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.78, 0.38 + u_treble * 0.12));
   vec3 water = hsv2rgb(vec3(u_theme.x, 0.74, 0.3 + u_mid * 0.12));
@@ -473,6 +574,9 @@ void main() {
   vec3 excitation = color * (0.12 + pulse * 0.09 + u_beat * 0.06);
   color = mix(color, memory + excitation, u_feedback);
   color = color / (1.0 + color * 1.55);
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, u_saturation);
+  color = mix(vec3(0.5), color, u_sharpness);
 
   float vignette = smoothstep(1.55, 0.18, length(uv - 0.5));
   color *= 0.34 + vignette * 0.72;
@@ -593,6 +697,12 @@ function initErosionWebgl() {
         theme: gl.getUniformLocation(program, "u_theme"),
         previous: gl.getUniformLocation(program, "u_previous"),
         feedback: gl.getUniformLocation(program, "u_feedback"),
+        scale: gl.getUniformLocation(program, "u_scale"),
+        density: gl.getUniformLocation(program, "u_density"),
+        gradient: gl.getUniformLocation(program, "u_gradient"),
+        saturation: gl.getUniformLocation(program, "u_saturation"),
+        sharpness: gl.getUniformLocation(program, "u_sharpness"),
+        line: gl.getUniformLocation(program, "u_line"),
       },
       displayUniforms: {
         scene: gl.getUniformLocation(displayProgram, "u_scene"),
@@ -612,7 +722,7 @@ function drawErosionFlow(features) {
   const state = initErosionWebgl();
   if (!state) return;
   const { gl, program, displayProgram, buffer, position, displayPosition, uniforms, displayUniforms } = state;
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const sensitivity = Number(sensitivityInput.value);
   if (!state.feedback || state.feedback.width !== webglCanvas.width || state.feedback.height !== webglCanvas.height) {
     resetErosionFeedback();
@@ -650,6 +760,12 @@ function drawErosionFlow(features) {
   gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
   gl.uniform1i(uniforms.previous, 0);
   gl.uniform1f(uniforms.feedback, 0.48 + Math.min(0.12, features.energy * 0.12));
+  gl.uniform1f(uniforms.scale, visualTuning.size);
+  gl.uniform1f(uniforms.density, visualTuning.density);
+  gl.uniform1f(uniforms.gradient, visualTuning.gradient);
+  gl.uniform1f(uniforms.saturation, visualTuning.saturation);
+  gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
+  gl.uniform1f(uniforms.line, visualTuning.line);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -665,12 +781,12 @@ function drawErosionFlow(features) {
 }
 
 function drawRing(width, height, features) {
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const cx = width / 2;
   const cy = height / 2;
   const size = Math.min(width, height);
   const radius = size * (0.18 + features.bass * 0.12 + features.beat * 0.025);
-  const bars = 160;
+  const bars = Math.round(160 * visualTuning.density);
   const sensitivity = Number(sensitivityInput.value);
 
   ctx.save();
@@ -685,7 +801,7 @@ function drawRing(width, height, features) {
     const hue = theme.base + amp * 70 + features.bass * 38;
 
     ctx.strokeStyle = `hsla(${hue}, 92%, ${58 + amp * 24}%, ${0.62 + amp * 0.34})`;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = (2) * visualTuning.line;
     ctx.beginPath();
     ctx.moveTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
     ctx.lineTo(Math.cos(angle) * (radius + length), Math.sin(angle) * (radius + length));
@@ -705,10 +821,10 @@ function drawRing(width, height, features) {
 }
 
 function drawTunnel(width, height, features) {
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const cx = width / 2;
   const cy = height / 2;
-  const rings = 34;
+  const rings = Math.round(34 * visualTuning.density);
   const sensitivity = Number(sensitivityInput.value);
 
   ctx.save();
@@ -718,7 +834,7 @@ function drawTunnel(width, height, features) {
   for (let r = rings; r > 0; r -= 1) {
     const depth = r / rings;
     const radius = Math.min(width, height) * (0.06 + depth * 0.58);
-    const points = 96;
+      const points = Math.round(96 * visualTuning.density);
     const waveOffset = Math.floor(depth * frequencyData.length * 0.45);
 
     ctx.beginPath();
@@ -735,7 +851,7 @@ function drawTunnel(width, height, features) {
     }
 
     ctx.strokeStyle = `hsla(${theme.third + depth * 155 + features.treble * 80}, 90%, ${42 + depth * 28}%, ${0.08 + depth * 0.42})`;
-    ctx.lineWidth = 1 + depth * 2.2 + features.bass * 3 + features.beat * 2.5;
+    ctx.lineWidth = (1 + depth * 2.2 + features.bass * 3 + features.beat * 2.5) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -743,11 +859,11 @@ function drawTunnel(width, height, features) {
 }
 
 function drawCurtain(width, height, features) {
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const cx = width / 2;
   const cy = height / 2;
   const baseWidth = Math.min(width * 0.82, 980);
-  const columns = 112;
+  const columns = Math.round(112 * visualTuning.density);
   const sensitivity = Number(sensitivityInput.value);
   const beatLift = 1 + features.beat * 0.28;
 
@@ -780,7 +896,7 @@ function drawCurtain(width, height, features) {
       const hue = theme.base + amp * 82 + layer * 24 + features.treble * 40;
 
       ctx.strokeStyle = `hsla(${hue}, 92%, ${56 + amp * 28}%, ${alpha + amp * 0.32})`;
-      ctx.lineWidth = 1.2 + amp * 3.5 + features.beat * 1.8;
+      ctx.lineWidth = (1.2 + amp * 3.5 + features.beat * 1.8) * visualTuning.line;
       ctx.beginPath();
       ctx.moveTo(x, -yOffset - barHeight);
       ctx.quadraticCurveTo(x + Math.sin(frame * 0.018 + i * 0.21) * 10, -yOffset, x, yOffset + barHeight);
@@ -797,7 +913,7 @@ function drawCurtain(width, height, features) {
     }
   }
 
-  ctx.lineWidth = 2;
+  ctx.lineWidth = (2) * visualTuning.line;
   for (let pass = 0; pass < 3; pass += 1) {
     ctx.beginPath();
     for (let i = 0; i < timeData.length; i += 8) {
@@ -817,7 +933,7 @@ function drawCurtain(width, height, features) {
   for (let i = 0; i < rings; i += 1) {
     const radius = Math.min(width, height) * (0.11 + i * 0.08 + features.bass * 0.025);
     ctx.strokeStyle = `hsla(${theme.third + i * 18}, 88%, 62%, ${0.08 + features.energy * 0.16 - i * 0.008})`;
-    ctx.lineWidth = 1 + features.beat * 1.4;
+    ctx.lineWidth = (1 + features.beat * 1.4) * visualTuning.line;
     ctx.beginPath();
     ctx.ellipse(0, 0, radius * 1.78, radius * 0.36, Math.sin(frame * 0.004) * 0.08, 0, Math.PI * 2);
     ctx.stroke();
@@ -883,7 +999,7 @@ function drawTerrain(width, height, features) {
     }
 
     ctx.strokeStyle = ridgeGradient;
-    ctx.lineWidth = 0.8 + (1 - depth) * 1.1 + features.beat * 1.4;
+    ctx.lineWidth = (0.8 + (1 - depth) * 1.1 + features.beat * 1.4) * visualTuning.line;
     ctx.globalAlpha = 0.15 + (1 - depth) * 0.35;
     ctx.stroke();
   }
@@ -898,7 +1014,7 @@ function drawTerrain(width, height, features) {
     ctx.moveTo(startX, horizon - amp * 60);
     ctx.lineTo(vanishingX + (startX - vanishingX) * 0.25, height * 0.92);
     ctx.strokeStyle = `rgba(74, 214, 202, ${0.06 + amp * 0.16})`;
-    ctx.lineWidth = 0.8 + amp * 1.2;
+    ctx.lineWidth = (0.8 + amp * 1.2) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -908,7 +1024,7 @@ function drawTerrain(width, height, features) {
   beam.addColorStop(0.38, `rgba(245,244,216,${0.26 + features.energy * 0.36})`);
   beam.addColorStop(1, `rgba(64,224,216,${0.12 + features.treble * 0.24})`);
   ctx.strokeStyle = beam;
-  ctx.lineWidth = 4 + features.beat * 5;
+  ctx.lineWidth = (4 + features.beat * 5) * visualTuning.line;
   ctx.beginPath();
   for (let i = 0; i < timeData.length; i += 6) {
     const t = i / (timeData.length - 1);
@@ -930,7 +1046,7 @@ function drawTerrain(width, height, features) {
   ctx.fill();
 
   ctx.strokeStyle = `rgba(255, 150, 36, ${0.32 + features.bass * 0.52})`;
-  ctx.lineWidth = 3 + features.beat * 3;
+  ctx.lineWidth = (3 + features.beat * 3) * visualTuning.line;
   ctx.beginPath();
   for (let i = 0; i < 18; i += 1) {
     const y = horizon - terrainHeight * 1.75 - i * 10;
@@ -945,7 +1061,7 @@ function drawTerrain(width, height, features) {
     const x = width * (0.34 + t * 0.58);
     const y = horizon + height * (0.05 + i * 0.075) + Math.sin(frame * 0.026 + i) * 24;
     ctx.strokeStyle = `rgba(255, 92, 8, ${0.26 + features.mid * 0.38})`;
-    ctx.lineWidth = 2 + features.beat * 2;
+    ctx.lineWidth = (2 + features.beat * 2) * visualTuning.line;
     ctx.beginPath();
     ctx.moveTo(x - 120, y - 18);
     ctx.lineTo(x + 80, y + 16);
@@ -1006,7 +1122,7 @@ function drawLaserBeam(x1, y1, x2, y2, hue, alpha, widthScale = 1) {
   ctx.fill();
 
   ctx.strokeStyle = `hsla(${hue}, 100%, 72%, ${Math.min(1, alpha + 0.2)})`;
-  ctx.lineWidth = Math.max(1, widthScale * 1.5);
+  ctx.lineWidth = (Math.max(1, widthScale * 1.5)) * visualTuning.line;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
@@ -1059,7 +1175,7 @@ function drawLaserCathedral(width, height, features) {
   }
 
   ctx.strokeStyle = `hsla(${accentHue}, 100%, 62%, ${0.18 + features.energy * 0.36})`;
-  ctx.lineWidth = 1 + features.beat * 2;
+  ctx.lineWidth = (1 + features.beat * 2) * visualTuning.line;
   ctx.beginPath();
   ctx.moveTo(width * 0.18, altarY);
   ctx.lineTo(centerX, apexY);
@@ -1117,7 +1233,7 @@ function drawLightScanner(width, height, features) {
   ctx.fill();
 
   ctx.strokeStyle = `hsla(${coolHue}, 100%, 76%, ${0.4 + features.treble * 0.34})`;
-  ctx.lineWidth = 2 + features.beat * 3;
+  ctx.lineWidth = (2 + features.beat * 3) * visualTuning.line;
   for (let i = 0; i < 5; i += 1) {
     const r = radius * (1 + i * 0.34 + features.energy * 0.12);
     ctx.beginPath();
@@ -1126,7 +1242,7 @@ function drawLightScanner(width, height, features) {
   }
 
   ctx.strokeStyle = `hsla(${warmHue}, 100%, 62%, ${0.32 + features.bass * 0.45})`;
-  ctx.lineWidth = 3 + features.beat * 4;
+  ctx.lineWidth = (3 + features.beat * 4) * visualTuning.line;
   ctx.beginPath();
   ctx.moveTo(cx - radius * 1.8, cy);
   ctx.lineTo(cx + radius * 1.8, cy);
@@ -1148,7 +1264,7 @@ function drawLightScanner(width, height, features) {
 
 function drawSonicVortex(width, height, features) {
   const sensitivity = Number(sensitivityInput.value);
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const cx = width * 0.5;
   const cy = height * 0.46;
   const size = Math.min(width, height);
@@ -1180,7 +1296,7 @@ function drawSonicVortex(width, height, features) {
     }
     const hue = theme.second + depth * 140 + features.treble * 90;
     ctx.strokeStyle = `hsla(${hue}, 86%, ${42 + depth * 28}%, ${0.05 + (1 - depth) * 0.18 + features.energy * 0.1})`;
-    ctx.lineWidth = 0.8 + (1 - depth) * 1.5 + features.beat * 1.8;
+    ctx.lineWidth = (0.8 + (1 - depth) * 1.5 + features.beat * 1.8) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -1190,7 +1306,7 @@ function drawSonicVortex(width, height, features) {
     const r1 = hole * (1.2 + amp);
     const r2 = maxRadius * (0.52 + amp * 0.28);
     ctx.strokeStyle = `hsla(${theme.base + i * 11}, 100%, 68%, ${0.06 + amp * 0.22})`;
-    ctx.lineWidth = 1 + amp * 3;
+    ctx.lineWidth = (1 + amp * 3) * visualTuning.line;
     ctx.beginPath();
     ctx.moveTo(cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1 * 0.74);
     ctx.lineTo(cx + Math.cos(angle + features.mid) * r2, cy + Math.sin(angle + features.mid) * r2 * 0.8);
@@ -1208,7 +1324,7 @@ function drawSonicVortex(width, height, features) {
   ctx.fill();
 
   ctx.strokeStyle = `hsla(${theme.third}, 100%, 60%, ${0.36 + features.bass * 0.42})`;
-  ctx.lineWidth = 2 + features.beat * 4;
+  ctx.lineWidth = (2 + features.beat * 4) * visualTuning.line;
   ctx.beginPath();
   ctx.moveTo(cx - maxRadius * 0.46, cy);
   ctx.lineTo(cx + maxRadius * 0.46, cy);
@@ -1233,7 +1349,7 @@ function drawWireformSculpture(width, height, features) {
 
   const scanAlpha = 0.06 + features.treble * 0.12;
   ctx.strokeStyle = `rgba(255, 255, 255, ${scanAlpha})`;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = (1) * visualTuning.line;
   for (let y = height * 0.18; y < height * 0.78; y += 13) {
     const drift = Math.sin(y * 0.03 + frame * 0.028) * features.mid * 38;
     ctx.beginPath();
@@ -1264,14 +1380,14 @@ function drawWireformSculpture(width, height, features) {
       else ctx.lineTo(x, y);
     }
     ctx.strokeStyle = `rgba(255, 255, 255, ${0.12 + layer * 0.06 + features.energy * 0.22})`;
-    ctx.lineWidth = 0.8 + layer * 0.35 + features.beat * 1.4;
+    ctx.lineWidth = (0.8 + layer * 0.35 + features.beat * 1.4) * visualTuning.line;
     ctx.stroke();
   }
 
   for (let slice = -6; slice <= 6; slice += 1) {
     const y = slice * sculptureRadius * 0.19 + Math.sin(frame * 0.018 + slice) * features.mid * 22;
     ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + Math.abs(slice) * 0.012 + features.treble * 0.18})`;
-    ctx.lineWidth = 1 + features.beat;
+    ctx.lineWidth = (1 + features.beat) * visualTuning.line;
     ctx.beginPath();
     for (let i = 0; i <= 96; i += 1) {
       const t = i / 96;
@@ -1336,7 +1452,7 @@ function drawPsyFluid(width, height, features) {
     }
     const hue = baseHue + depth * 86 + features.treble * 40;
     ctx.strokeStyle = `hsla(${hue}, 92%, ${48 + depth * 18}%, ${0.06 + (1 - depth) * 0.14 + features.energy * 0.14})`;
-    ctx.lineWidth = 1.1 + features.beat * 1.8 + depth * 1.4;
+    ctx.lineWidth = (1.1 + features.beat * 1.8 + depth * 1.4) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -1414,12 +1530,12 @@ function drawCrystalDrift(width, height, features) {
       else ctx.lineTo(x, y);
     }
     ctx.strokeStyle = `rgba(150, 255, 153, ${0.1 + features.mid * 0.2})`;
-    ctx.lineWidth = size * (0.03 + ribbon * 0.006 + features.bass * 0.018);
+    ctx.lineWidth = (size * (0.03 + ribbon * 0.006 + features.bass * 0.018)) * visualTuning.line;
     ctx.lineCap = "round";
     ctx.stroke();
 
     ctx.strokeStyle = `rgba(239, 255, 206, ${0.22 + features.treble * 0.26})`;
-    ctx.lineWidth = 1.2 + features.beat * 2.2;
+    ctx.lineWidth = (1.2 + features.beat * 2.2) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -1461,13 +1577,13 @@ function drawCrystalDrift(width, height, features) {
     ctx.fillStyle = `hsla(${hue}, 88%, ${58 + amp * 20}%, ${0.16 + alpha * 0.5})`;
     ctx.fill();
     ctx.strokeStyle = `rgba(246, 255, 230, ${0.34 + amp * 0.34})`;
-    ctx.lineWidth = 1 + features.treble * 2;
+    ctx.lineWidth = (1 + features.treble * 2) * visualTuning.line;
     ctx.stroke();
 
     for (let facet = 0; facet < seed.sides; facet += 2) {
       const angle = (facet / seed.sides) * Math.PI * 2 + Math.sin(frame * 0.01 + seed.phase) * 0.18;
       ctx.strokeStyle = `rgba(255, 236, 255, ${0.18 + amp * 0.32})`;
-      ctx.lineWidth = 0.7;
+      ctx.lineWidth = (0.7) * visualTuning.line;
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(Math.cos(angle) * radius * 0.84, Math.sin(angle) * radius * 0.84);
@@ -1548,7 +1664,7 @@ function drawSkyChamber(width, height, features) {
   for (let i = 0; i < 8; i += 1) {
     const t = i / 7;
     ctx.strokeStyle = `hsla(${hueC + t * 42}, 100%, ${68 + t * 12}%, ${rimAlpha * (1 - t * 0.68)})`;
-    ctx.lineWidth = 1.2 + t * 5 + features.beat * 3;
+    ctx.lineWidth = (1.2 + t * 5 + features.beat * 3) * visualTuning.line;
     ctx.beginPath();
     ctx.ellipse(
       cx,
@@ -1568,7 +1684,7 @@ function drawSkyChamber(width, height, features) {
     const half = apertureW * (1.15 + t * 0.9);
     const alpha = 0.045 + (1 - t) * 0.08 + features.energy * 0.05;
     ctx.strokeStyle = `hsla(${hueB + t * 28}, 96%, ${62 - t * 20}%, ${alpha})`;
-    ctx.lineWidth = 1.2 + features.mid * 2;
+    ctx.lineWidth = (1.2 + features.mid * 2) * visualTuning.line;
     ctx.beginPath();
     ctx.moveTo(cx - half, y);
     ctx.quadraticCurveTo(cx, y + size * (0.035 + features.bass * 0.025), cx + half, y);
@@ -1593,7 +1709,7 @@ function drawSkyChamber(width, height, features) {
     const t = i / 4;
     const drift = Math.sin(frame * 0.006 + i) * size * 0.012 * sensitivity;
     ctx.strokeStyle = `rgba(255, 255, 255, ${0.025 + features.treble * 0.04})`;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = (1) * visualTuning.line;
     ctx.beginPath();
     ctx.ellipse(cx + drift, cy + t * height * 0.09, apertureW * (0.72 + t * 0.4), apertureH * (0.2 + t * 0.16), 0, 0, Math.PI * 2);
     ctx.stroke();
@@ -1609,7 +1725,7 @@ function drawBoilingType(width, height, features) {
   const sensitivity = Number(sensitivityInput.value);
   const size = Math.min(width, height);
   const surfaceY = height * (0.57 + features.bass * 0.035);
-  const theme = themes[currentTheme];
+  const theme = tunedTheme();
   const heat = 0.42 + features.energy * 0.95 + features.beat * 0.35;
   const waveHeight = size * (0.025 + features.bass * 0.06) * sensitivity;
 
@@ -1644,7 +1760,7 @@ function drawBoilingType(width, height, features) {
       else ctx.lineTo(x, yy);
     }
     ctx.strokeStyle = `hsla(${theme.base + depth * 76}, 96%, ${58 + depth * 18}%, ${0.055 + (1 - depth) * 0.12 + features.treble * 0.08})`;
-    ctx.lineWidth = 1 + depth * 2.4 + features.beat * 2;
+    ctx.lineWidth = (1 + depth * 2.4 + features.beat * 2) * visualTuning.line;
     ctx.stroke();
   }
 
@@ -1655,7 +1771,7 @@ function drawBoilingType(width, height, features) {
     const r = bubble.radius * (1.5 + bubble.z) + features.treble * 8 + features.beat * 2;
     const alpha = 0.08 + (1 - travel) * 0.16 + features.treble * 0.2;
     ctx.strokeStyle = `rgba(210, 250, 255, ${alpha})`;
-    ctx.lineWidth = 0.8 + features.treble * 1.2;
+    ctx.lineWidth = (0.8 + features.treble * 1.2) * visualTuning.line;
     ctx.beginPath();
     ctx.ellipse(x, y, r * (0.8 + bubble.z * 0.18), r * 1.18, Math.sin(frame * 0.01 + bubble.phase) * 0.5, 0, Math.PI * 2);
     ctx.stroke();
@@ -1695,7 +1811,7 @@ function drawBoilingType(width, height, features) {
     ctx.fillStyle = `rgba(2, 10, 16, ${0.36 + heat * 0.18})`;
     ctx.fillText(letter, 8 + features.beat * 3, 10 + features.beat * 4);
     ctx.strokeStyle = `hsla(${theme.third + amp * 70}, 100%, 76%, ${0.22 + amp * 0.34})`;
-    ctx.lineWidth = 2 + amp * 3;
+    ctx.lineWidth = (2 + amp * 3) * visualTuning.line;
     ctx.strokeText(letter, 0, 0);
     const face = ctx.createLinearGradient(0, -letterFont * 0.55, 0, letterFont * 0.55);
     face.addColorStop(0, `hsla(${theme.base + 178}, 100%, ${82 + amp * 10}%, ${0.84 + amp * 0.12})`);
@@ -1759,10 +1875,10 @@ function drawBoilingType(width, height, features) {
 }
 
 function render() {
-  frame += 1;
+  frame += visualTuning.speed;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  const features = audioFeatures();
+  const features = tunedFeatures(audioFeatures());
   const isWebglMode = currentMode === "erosion";
 
   document.body.classList.toggle("webgl-mode", isWebglMode);
@@ -1775,6 +1891,7 @@ function render() {
   }
 
   clearStage(width, height, features);
+  applyCanvasTuning(width, height);
 
   if (currentMode === "ring") drawRing(width, height, features);
   if (currentMode === "tunnel") drawTunnel(width, height, features);
@@ -1788,6 +1905,9 @@ function render() {
   if (currentMode === "crystal") drawCrystalDrift(width, height, features);
   if (currentMode === "skychamber") drawSkyChamber(width, height, features);
   if (currentMode === "boiling") drawBoilingType(width, height, features);
+
+  ctx.restore();
+  ctx.filter = "none";
 
   requestAnimationFrame(render);
 }
@@ -2096,6 +2216,7 @@ modeButtons.forEach((button) => {
     button.classList.add("active");
     currentMode = button.dataset.mode;
     document.body.classList.toggle("webgl-mode", currentMode === "erosion");
+    if (currentMode === "erosion") resetErosionFeedback();
   });
 });
 
@@ -2104,7 +2225,26 @@ themeButtons.forEach((button) => {
     themeButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     currentTheme = button.dataset.theme;
+    resetErosionFeedback();
   });
+});
+
+tuningInputs.forEach((input) => {
+  input.addEventListener("input", () => {
+    readVisualTuning();
+    updateTuningLabels();
+  });
+
+  input.addEventListener("change", () => {
+    readVisualTuning();
+    updateTuningLabels();
+    resetErosionFeedback();
+  });
+});
+
+resetTuningButton.addEventListener("click", (event) => {
+  event.preventDefault();
+  resetVisualTuning();
 });
 
 recordButton.addEventListener("click", () => {
@@ -2181,5 +2321,7 @@ window.addEventListener("resize", () => {
 });
 
 resizeCanvas();
+readVisualTuning();
+updateTuningLabels();
 applyLanguage("zh");
 render();

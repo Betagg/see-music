@@ -319,6 +319,71 @@ audio {
   min-width: 0;
 }
 
+.tuning-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.tuning-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(247, 250, 252, 0.82);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.tuning-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.reset-tuning-button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 250, 252, 0.76);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tuning-grid {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.tuning-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  color: rgba(247, 250, 252, 0.7);
+  font-size: 12px;
+}
+
+.tuning-row input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.tuning-row b {
+  color: rgba(247, 250, 252, 0.82);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .segmented,
 .theme-grid {
   display: grid;
