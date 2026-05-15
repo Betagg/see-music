@@ -1207,7 +1207,7 @@ vec3 drawSky(vec2 uv, vec2 sunShift, float sm) {
   float rings = 38.0 + u_density * 24.0;
   vec2 id = vec2((length(u) + 0.01) * rings, 0.0);
   float segments = max(3.0, floor(id.x) * (0.065 + u_density * 0.025));
-  float ringShift = (hash12(floor(id.xx)) * 0.5 + 0.25) * (u_time + 10.0) * (0.16 + u_mid * 0.06);
+  float ringShift = (hash12(floor(id.xx)) * 0.5 + 0.25) * (u_time + 10.0) * 0.16;
   vec2 turned = rotate2D(u, ringShift);
   id.y = atan(turned.y, turned.x) * segments;
   vec2 local = fract(id);
@@ -1219,9 +1219,9 @@ vec3 drawSky(vec2 uv, vec2 sunShift, float sm) {
   );
   center = rotate2D(center, -ringShift) - sunShift;
 
-  float cloud = noise2(center * vec2(0.5, 1.0) - vec2(u_time * (0.1 + u_mid * 0.04), 0.0));
+  float cloud = noise2(center * vec2(0.5, 1.0) - vec2(u_time * 0.1, 0.0));
   cloud *= step(-0.25, center.y);
-  cloud = smoothstep(0.038, 0.062, cloud + u_treble * 0.02);
+  cloud = smoothstep(0.038, 0.062, cloud);
   local += noise2(local * vec2(1.0, 4.0) + id) * vec2(0.7, 0.2);
 
   vec3 sky = skyPalette(sin(length(u) - 0.1 + u_theme.x * 0.18)) * 0.36;
@@ -1241,13 +1241,13 @@ vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm) {
     float offset = 1.0 - float(j);
     if (id.y + offset < -5.0) {
       vec2 local = fract(u) - 0.5;
-      float wave = sin(uv.x * (9.0 + u_density * 4.0) - u_time * (1.0 + u_mid * 0.85) + id.y + offset);
-      local.y = (local.y + wave * (0.16 + u_bass * 0.08) - offset) * 4.0;
+      float wave = sin(uv.x * (9.0 + u_density * 4.0) - u_time * 1.0 + id.y + offset);
+      local.y = (local.y + wave * 0.16 - offset) * 4.0;
       float seed = hash12(vec2(id.y + offset, floor(local.y)));
       float xDensity = 5.0 + seed * 4.0 + u_density * 2.0;
       float yDensity = 24.0 + u_density * 8.0;
       local.x = uv.x * xDensity + sunShift.x * 8.0 + sin(u_time * (0.22 + seed * 0.7)) * 0.45;
-      float track = 0.78 * smoothstep(5.0, 0.0, abs(floor(local.x))) * cloud + 0.08 + u_beat * 0.05;
+      float track = 0.78 * smoothstep(5.0, 0.0, abs(floor(local.x))) * cloud + 0.08;
       vec3 baseWater = mix(vec3(0.0, 0.08, 0.42), vec3(0.32, 0.32, 0.02), track);
       color = mix(color, baseWater, softBar(local.y, 0.0, sm * yDensity / max(u_line, 0.2)));
       local += noise2(local * vec2(3.0, 0.5)) * vec2(0.1, 0.6);
@@ -1266,8 +1266,8 @@ vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm) {
   float seed = (hash12(id) - 0.5) * 0.25 + 0.5;
   vec2 local = u;
   local -= vec2(0.3, 0.5 - seed * 0.4);
-  float breeze = sin((u_time * (0.7 + u_mid * 0.45) + seed * 2.0 - id.x * 0.05 - id.y * 0.05) * 2.0 + id.y * 0.5);
-  local.x += breeze * (local.y + 0.5) * (0.28 + u_bass * 0.08);
+  float breeze = sin((u_time * 0.7 + seed * 2.0 - id.x * 0.05 - id.y * 0.05) * 2.0 + id.y * 0.5);
+  local.x += breeze * (local.y + 0.5) * 0.28;
   vec2 d = abs(local) - vec2(0.02, 0.5 - seed * 0.5);
   float blade = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
   blade -= noise2(local * 7.0 + id) * 0.1;
@@ -1279,7 +1279,7 @@ vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm) {
 }
 
 vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
-  float swing = sin(u_time * (0.22 + u_mid * 0.12));
+  float swing = sin(u_time * 0.22);
   vec2 u = uv + treePos;
   u.x -= sin(u.y + 1.0) * 0.16 * (swing + 0.75);
   u += noise2(u * 4.5 - 7.0) * 0.18;
@@ -1316,23 +1316,58 @@ vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
   return result;
 }
 
+float fishShape(vec2 p, float tailWave, float sm) {
+  vec2 bodyP = p / vec2(1.18, 0.42);
+  float body = 1.0 - smoothstep(0.92, 1.02, length(bodyP));
+  vec2 tailP = p - vec2(-1.05, 0.0);
+  tailP.y += tailWave * 0.12;
+  float tail = 1.0 - smoothstep(0.0, 0.08 + sm * 20.0, abs(tailP.x) * 1.2 + abs(tailP.y) * 2.0 - 0.55);
+  float head = 1.0 - smoothstep(0.1, 0.16 + sm * 12.0, length((p - vec2(0.86, 0.0)) / vec2(0.35, 0.3)));
+  return clamp(max(body, tail) + head * 0.18, 0.0, 1.0);
+}
+
+vec4 drawFish(vec2 uv, float seed, float sm) {
+  float music = clamp(u_bass * 0.75 + u_mid * 0.35 + u_beat * 0.9, 0.0, 1.8);
+  float swim = u_time * (0.055 + seed * 0.025) + music * 0.035;
+  vec2 pos = vec2(
+    mix(-1.12, 1.08, fract(seed * 7.31 + swim)),
+    -0.48 - seed * 0.28 + sin(u_time * (0.16 + seed * 0.08) + seed * 8.0) * 0.025
+  );
+  float appear = smoothstep(-0.2, 0.55, sin(u_time * (0.34 + seed * 0.18) + seed * 12.0 + music * 1.8));
+  appear *= smoothstep(-0.92, -0.82, pos.x) * (1.0 - smoothstep(0.82, 1.02, pos.x));
+  float scale = 0.048 + seed * 0.018 + music * 0.008;
+  vec2 p = (uv - pos) / scale;
+  float tailWave = sin(u_time * (2.2 + seed * 1.8) + music * 4.5 + seed * 9.0);
+  float shape = fishShape(p, tailWave, sm);
+  float mosaic = softBar(abs(fract((p.x * 2.0 + p.y * 4.0 + seed * 3.0)) - 0.5), 0.36, sm * 46.0);
+  vec3 base = hueColor(0.52 + seed * 0.08 + u_theme.x * 0.08);
+  vec3 light = mix(base * 0.28, base * (0.82 + u_treble * 0.28), mosaic);
+  light = mix(light, vec3(1.0, 0.92, 0.28), 0.12 + music * 0.08);
+  float alpha = shape * appear * (0.22 + music * 0.28);
+  return vec4(light, alpha);
+}
+
 void main() {
   vec2 r = u_resolution.xy;
   vec2 uv = (gl_FragCoord.xy * 2.0 - r) / r.y;
   uv /= max(u_scale, 0.25);
   float sm = 3.0 / r.y;
   float aspect = r.x / r.y;
-  vec2 sunPos = vec2(aspect * 0.42, -0.53 + u_bass * 0.02);
+  vec2 sunPos = vec2(aspect * 0.42, -0.53);
   vec2 treePos = vec2(-aspect * 0.42, -0.2);
-  vec2 sunShift = rotate2D(sunPos, noise2(uv + u_time * (0.1 + u_mid * 0.04)) * (0.18 + u_energy * 0.04));
+  vec2 sunShift = rotate2D(sunPos, noise2(uv + u_time * 0.1) * 0.18);
 
   vec3 color = drawSky(uv, sunShift, sm);
   if (uv.y < -0.35) {
     color = drawWater(color, uv, sunShift, sm);
+    for (int i = 0; i < 5; i++) {
+      vec4 fish = drawFish(uv, 0.13 + float(i) * 0.19, sm);
+      color = mix(color, fish.rgb, fish.a);
+    }
   }
 
   vec2 grassUv = uv + noise2(uv * 2.0) * 0.1 + vec2(0.0, sin(uv.x + 3.0) * 0.36 + 0.8);
-  vec3 grassColor = mix(vec3(0.7, 0.6, 0.2), vec3(0.03, 0.78, 0.12), sin(u_time * 0.08 + u_mid) * 0.5 + 0.5);
+  vec3 grassColor = mix(vec3(0.7, 0.6, 0.2), vec3(0.03, 0.78, 0.12), sin(u_time * 0.08) * 0.5 + 0.5);
   color = mix(color, grassColor * 0.38, step(grassUv.y, 0.0));
 
   float grassMask = 0.0;
@@ -1355,7 +1390,7 @@ void main() {
     color = mix(color, tree.rgb, tree.a * (1.0 - grassMask));
   }
 
-  color *= 0.72 + 0.2 * u_gradient + u_beat * 0.04;
+  color *= 0.72 + 0.2 * u_gradient;
   float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
   color = mix(vec3(luma), color, u_saturation);
   color = mix(vec3(0.5), color, 0.74 + u_sharpness * 0.18);
