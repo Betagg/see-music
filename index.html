@@ -99,53 +99,7 @@
             <span data-i18n="tuningTitle">视觉调优</span>
             <button id="resetTuningButton" class="reset-tuning-button" type="button" data-i18n="resetTuning">重置</button>
           </summary>
-          <div class="tuning-grid">
-            <label class="tuning-row" for="tuneSize">
-              <span data-i18n="tuneSize">大小</span>
-              <input id="tuneSize" data-tuning="size" type="range" min="0.7" max="1.6" step="0.05" value="1" />
-              <b data-tuning-value="size">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneHue">
-              <span data-i18n="tuneHue">颜色</span>
-              <input id="tuneHue" data-tuning="hue" type="range" min="-180" max="180" step="5" value="0" />
-              <b data-tuning-value="hue">0°</b>
-            </label>
-            <label class="tuning-row" for="tuneGradient">
-              <span data-i18n="tuneGradient">渐变</span>
-              <input id="tuneGradient" data-tuning="gradient" type="range" min="0.4" max="1.8" step="0.05" value="1" />
-              <b data-tuning-value="gradient">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneSaturation">
-              <span data-i18n="tuneSaturation">饱和度</span>
-              <input id="tuneSaturation" data-tuning="saturation" type="range" min="0.35" max="1.8" step="0.05" value="1" />
-              <b data-tuning-value="saturation">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneSharpness">
-              <span data-i18n="tuneSharpness">锐度</span>
-              <input id="tuneSharpness" data-tuning="sharpness" type="range" min="0.35" max="1.8" step="0.05" value="1" />
-              <b data-tuning-value="sharpness">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneLine">
-              <span data-i18n="tuneLine">线宽</span>
-              <input id="tuneLine" data-tuning="line" type="range" min="0.45" max="2.4" step="0.05" value="1" />
-              <b data-tuning-value="line">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneDensity">
-              <span data-i18n="tuneDensity">密度</span>
-              <input id="tuneDensity" data-tuning="density" type="range" min="0.45" max="2.2" step="0.05" value="1" />
-              <b data-tuning-value="density">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneSpeed">
-              <span data-i18n="tuneSpeed">快慢</span>
-              <input id="tuneSpeed" data-tuning="speed" type="range" min="0.2" max="2.4" step="0.05" value="1" />
-              <b data-tuning-value="speed">1.00</b>
-            </label>
-            <label class="tuning-row" for="tuneVibration">
-              <span data-i18n="tuneVibration">振动</span>
-              <input id="tuneVibration" data-tuning="vibration" type="range" min="0" max="2.4" step="0.05" value="1" />
-              <b data-tuning-value="vibration">1.00</b>
-            </label>
-          </div>
+          <div id="tuningGrid" class="tuning-grid"></div>
         </details>
 
         <div class="metrics" aria-label="实时特征">

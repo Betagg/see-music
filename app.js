@@ -10,8 +10,9 @@ const emptyState = document.querySelector("#emptyState");
 const modeButtons = document.querySelectorAll(".mode-button");
 const themeButtons = document.querySelectorAll(".theme-button");
 const sensitivityInput = document.querySelector("#sensitivity");
-const tuningInputs = document.querySelectorAll("[data-tuning]");
-const tuningValueNodes = document.querySelectorAll("[data-tuning-value]");
+const tuningGrid = document.querySelector("#tuningGrid");
+let tuningInputs = document.querySelectorAll("[data-tuning]");
+let tuningValueNodes = document.querySelectorAll("[data-tuning-value]");
 const resetTuningButton = document.querySelector("#resetTuningButton");
 const bassMeter = document.querySelector("#bassMeter");
 const midMeter = document.querySelector("#midMeter");
@@ -65,17 +66,8 @@ const translations = {
     themeEmber: "炽热",
     themeMono: "黑金",
     sensitivity: "灵敏度",
-    tuningTitle: "视觉调优",
+    tuningTitle: "当前效果调参",
     resetTuning: "重置",
-    tuneSize: "大小",
-    tuneHue: "颜色",
-    tuneGradient: "渐变",
-    tuneSaturation: "饱和度",
-    tuneSharpness: "锐度",
-    tuneLine: "线宽",
-    tuneDensity: "密度",
-    tuneSpeed: "快慢",
-    tuneVibration: "振动",
     bass: "低频",
     mid: "中频",
     treble: "高频",
@@ -136,17 +128,8 @@ const translations = {
     themeEmber: "Ember",
     themeMono: "Black Gold",
     sensitivity: "Sensitivity",
-    tuningTitle: "Visual Tuning",
+    tuningTitle: "Mode Tuning",
     resetTuning: "Reset",
-    tuneSize: "Size",
-    tuneHue: "Color",
-    tuneGradient: "Gradient",
-    tuneSaturation: "Saturation",
-    tuneSharpness: "Sharpness",
-    tuneLine: "Line",
-    tuneDensity: "Density",
-    tuneSpeed: "Speed",
-    tuneVibration: "Vibration",
     bass: "Bass",
     mid: "Mid",
     treble: "Treble",
@@ -258,33 +241,184 @@ const tuningDefaults = {
   speed: 1,
   vibration: 1,
 };
+const modeTuningConfigs = {
+  ring: [
+    { key: "size", zh: "圆环半径", en: "Ring Radius", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "频谱柱密度", en: "Bar Density", min: 0.5, max: 2.2, step: 0.05 },
+    { key: "line", zh: "频谱柱粗细", en: "Bar Width", min: 0.5, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "环形色相", en: "Ring Hue", min: -180, max: 180, step: 5 },
+    { key: "saturation", zh: "发光饱和度", en: "Glow Saturation", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "vibration", zh: "鼓点弹性", en: "Beat Elasticity", min: 0, max: 2.4, step: 0.05 },
+  ],
+  tunnel: [
+    { key: "size", zh: "隧道尺度", en: "Tunnel Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "隧道层数", en: "Tunnel Layers", min: 0.45, max: 2.1, step: 0.05 },
+    { key: "line", zh: "轮廓线宽", en: "Contour Width", min: 0.45, max: 2.3, step: 0.05 },
+    { key: "speed", zh: "穿行速度", en: "Travel Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "声墙起伏", en: "Wall Motion", min: 0, max: 2.4, step: 0.05 },
+  ],
+  curtain: [
+    { key: "size", zh: "光幕高度", en: "Curtain Height", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "density", zh: "光柱数量", en: "Light Columns", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "光柱粗细", en: "Column Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "光幕颜色", en: "Curtain Color", min: -180, max: 180, step: 5 },
+    { key: "vibration", zh: "垂直脉冲", en: "Vertical Pulse", min: 0, max: 2.4, step: 0.05 },
+  ],
+  terrain: [
+    { key: "size", zh: "地貌尺度", en: "Terrain Scale", min: 0.65, max: 1.65, step: 0.05 },
+    { key: "density", zh: "地形线密度", en: "Ridge Density", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "地形线粗细", en: "Ridge Width", min: 0.45, max: 2.3, step: 0.05 },
+    { key: "speed", zh: "地平线漂移", en: "Horizon Drift", min: 0.2, max: 2.2, step: 0.05 },
+    { key: "vibration", zh: "山峰隆起", en: "Peak Lift", min: 0, max: 2.4, step: 0.05 },
+    { key: "sharpness", zh: "山脊锐度", en: "Ridge Sharpness", min: 0.35, max: 1.8, step: 0.05 },
+  ],
+  laser: [
+    { key: "density", zh: "激光束数量", en: "Beam Count", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "激光束粗细", en: "Beam Width", min: 0.45, max: 2.6, step: 0.05 },
+    { key: "speed", zh: "扫动速度", en: "Sweep Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "激光色相", en: "Laser Hue", min: -180, max: 180, step: 5 },
+    { key: "saturation", zh: "霓虹强度", en: "Neon Saturation", min: 0.35, max: 1.8, step: 0.05 },
+  ],
+  scanner: [
+    { key: "size", zh: "扫描锥范围", en: "Scan Cone", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "line", zh: "扫描线粗细", en: "Scan Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "扫描速度", en: "Scan Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "冷暖偏移", en: "Hue Shift", min: -180, max: 180, step: 5 },
+    { key: "vibration", zh: "节拍闪光", en: "Beat Flash", min: 0, max: 2.4, step: 0.05 },
+  ],
+  vortex: [
+    { key: "size", zh: "漩涡洞口", en: "Vortex Core", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "螺旋层数", en: "Spiral Layers", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "螺旋线宽", en: "Spiral Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "旋转速度", en: "Spin Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "吸力强度", en: "Pull Strength", min: 0, max: 2.4, step: 0.05 },
+  ],
+  wireform: [
+    { key: "size", zh: "雕塑体量", en: "Sculpture Scale", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "density", zh: "切片密度", en: "Slice Density", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "线场粗细", en: "Line Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "旋转速度", en: "Rotation Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "sharpness", zh: "结构锐度", en: "Structure Sharpness", min: 0.35, max: 1.8, step: 0.05 },
+  ],
+  psyfluid: [
+    { key: "size", zh: "流体范围", en: "Fluid Scale", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "density", zh: "流体层数", en: "Fluid Layers", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "speed", zh: "流动速度", en: "Flow Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "迷幻渐变", en: "Psy Gradient", min: 0.4, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "色彩浓度", en: "Color Intensity", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "vibration", zh: "眼状脉冲", en: "Eye Pulse", min: 0, max: 2.4, step: 0.05 },
+  ],
+  crystal: [
+    { key: "size", zh: "晶体大小", en: "Crystal Size", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "density", zh: "星尘密度", en: "Dust Density", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "晶体描边", en: "Facet Lines", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "漂浮速度", en: "Drift Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "晶体呼吸", en: "Crystal Breath", min: 0, max: 2.4, step: 0.05 },
+  ],
+  skychamber: [
+    { key: "size", zh: "天窗开口", en: "Aperture Size", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "gradient", zh: "光场渐变", en: "Light Gradient", min: 0.4, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "光色浓度", en: "Light Saturation", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "line", zh: "边缘光宽", en: "Rim Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "呼吸速度", en: "Breath Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "光场脉冲", en: "Light Pulse", min: 0, max: 2.4, step: 0.05 },
+  ],
+  boiling: [
+    { key: "size", zh: "文字尺度", en: "Type Scale", min: 0.7, max: 1.7, step: 0.05 },
+    { key: "density", zh: "气泡密度", en: "Bubble Density", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "水纹粗细", en: "Ripple Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "speed", zh: "沸腾速度", en: "Boil Speed", min: 0.2, max: 2.4, step: 0.05 },
+    { key: "vibration", zh: "喷溅幅度", en: "Splash Energy", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "水光色相", en: "Water Hue", min: -180, max: 180, step: 5 },
+  ],
+  erosion: [
+    { key: "size", zh: "地形尺度", en: "Terrain Scale", min: 0.65, max: 1.7, step: 0.05 },
+    { key: "density", zh: "河道密度", en: "Channel Density", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "等高线粗细", en: "Contour Width", min: 0.45, max: 2.4, step: 0.05 },
+    { key: "gradient", zh: "地貌渐变", en: "Terrain Gradient", min: 0.4, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "沉积色彩", en: "Sediment Color", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "sharpness", zh: "侵蚀锐度", en: "Erosion Sharpness", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "vibration", zh: "律动侵蚀", en: "Rhythmic Erosion", min: 0, max: 2.4, step: 0.05 },
+  ],
+};
 let visualTuning = { ...tuningDefaults };
-
-function readVisualTuning() {
-  tuningInputs.forEach((input) => {
-    visualTuning[input.dataset.tuning] = Number(input.value);
-  });
-  return visualTuning;
-}
+const modeTuningValues = {};
 
 function formatTuningValue(key, value) {
   if (key === "hue") return `${Math.round(value)}°`;
   return value.toFixed(2);
 }
 
+function modeTuningDefaults(mode) {
+  const defaults = { ...tuningDefaults };
+  (modeTuningConfigs[mode] || modeTuningConfigs.ring).forEach((control) => {
+    defaults[control.key] = control.default ?? tuningDefaults[control.key];
+  });
+  return defaults;
+}
+
+function getModeTuning(mode) {
+  return { ...modeTuningDefaults(mode), ...(modeTuningValues[mode] || {}) };
+}
+
 function updateTuningLabels() {
   tuningValueNodes.forEach((node) => {
     const key = node.dataset.tuningValue;
-    node.textContent = formatTuningValue(key, visualTuning[key] ?? tuningDefaults[key]);
+    node.textContent = formatTuningValue(key, visualTuning[key] ?? modeTuningDefaults(currentMode)[key]);
   });
 }
 
-function resetVisualTuning() {
+function readVisualTuning() {
+  const next = getModeTuning(currentMode);
   tuningInputs.forEach((input) => {
-    input.value = tuningDefaults[input.dataset.tuning];
+    next[input.dataset.tuning] = Number(input.value);
   });
-  readVisualTuning();
+  modeTuningValues[currentMode] = next;
+  visualTuning = next;
+  return visualTuning;
+}
+
+function bindTuningInputs() {
+  tuningInputs.forEach((input) => {
+    input.addEventListener("input", () => {
+      readVisualTuning();
+      updateTuningLabels();
+    });
+
+    input.addEventListener("change", () => {
+      readVisualTuning();
+      updateTuningLabels();
+      resetErosionFeedback();
+    });
+  });
+}
+
+function renderTuningPanel() {
+  const controls = modeTuningConfigs[currentMode] || modeTuningConfigs.ring;
+  visualTuning = getModeTuning(currentMode);
+  tuningGrid.innerHTML = controls
+    .map((control) => {
+      const id = `tune-${currentMode}-${control.key}`;
+      const value = visualTuning[control.key] ?? tuningDefaults[control.key];
+      const label = currentLanguage === "zh" ? control.zh : control.en;
+      return `
+        <label class="tuning-row" for="${id}">
+          <span>${label}</span>
+          <input id="${id}" data-tuning="${control.key}" type="range" min="${control.min}" max="${control.max}" step="${control.step}" value="${value}" />
+          <b data-tuning-value="${control.key}">${formatTuningValue(control.key, value)}</b>
+        </label>
+      `;
+    })
+    .join("");
+  tuningInputs = tuningGrid.querySelectorAll("[data-tuning]");
+  tuningValueNodes = tuningGrid.querySelectorAll("[data-tuning-value]");
+  bindTuningInputs();
   updateTuningLabels();
+}
+
+function resetVisualTuning() {
+  delete modeTuningValues[currentMode];
+  renderTuningPanel();
   resetErosionFeedback();
 }
 
@@ -343,6 +477,7 @@ function applyLanguage(language) {
   languageButton.textContent = language === "zh" ? "EN" : "中";
   immersiveButton.textContent = isImmersive ? t("exit") : t("immersive");
   if (recorder?.state === "recording") recordButton.textContent = t("stopRecording");
+  renderTuningPanel();
 }
 
 function formatTime(seconds) {
@@ -2215,6 +2350,7 @@ modeButtons.forEach((button) => {
     modeButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     currentMode = button.dataset.mode;
+    renderTuningPanel();
     document.body.classList.toggle("webgl-mode", currentMode === "erosion");
     if (currentMode === "erosion") resetErosionFeedback();
   });
@@ -2225,19 +2361,6 @@ themeButtons.forEach((button) => {
     themeButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     currentTheme = button.dataset.theme;
-    resetErosionFeedback();
-  });
-});
-
-tuningInputs.forEach((input) => {
-  input.addEventListener("input", () => {
-    readVisualTuning();
-    updateTuningLabels();
-  });
-
-  input.addEventListener("change", () => {
-    readVisualTuning();
-    updateTuningLabels();
     resetErosionFeedback();
   });
 });
@@ -2321,7 +2444,5 @@ window.addEventListener("resize", () => {
 });
 
 resizeCanvas();
-readVisualTuning();
-updateTuningLabels();
 applyLanguage("zh");
 render();
