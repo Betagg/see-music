@@ -144,12 +144,22 @@ body.dragging-audio .stage::after {
   opacity: 1;
 }
 
-#visualizer {
+#visualizer,
+#webglVisualizer {
   display: block;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+#webglVisualizer {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.webgl-mode #webglVisualizer {
+  opacity: 1;
 }
 
 .empty-state {

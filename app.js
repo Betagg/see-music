@@ -1,5 +1,6 @@
 const canvas = document.querySelector("#visualizer");
 const ctx = canvas.getContext("2d");
+const webglCanvas = document.querySelector("#webglVisualizer");
 const audio = document.querySelector("#audio");
 const fileInput = document.querySelector("#fileInput");
 const urlInput = document.querySelector("#urlInput");
@@ -56,6 +57,7 @@ const translations = {
     modeCrystal: "晶体星尘",
     modeSkyChamber: "光域天窗",
     modeBoiling: "沸点字浪",
+    modeErosion: "侵蚀流域",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -115,6 +117,7 @@ const translations = {
     modeCrystal: "Crystal Drift",
     modeSkyChamber: "Sky Chamber",
     modeBoiling: "Boiling Type",
+    modeErosion: "Erosion Flow",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -217,6 +220,8 @@ let isSeeking = false;
 let knownDuration = 0;
 let currentLanguage = "zh";
 let dragDepth = 0;
+let webglState;
+let webglSupported = true;
 
 function t(key) {
   return translations[currentLanguage][key] || translations.zh[key] || key;
@@ -258,6 +263,9 @@ function resizeCanvas() {
   canvas.width = Math.floor(rect.width * ratio);
   canvas.height = Math.floor(rect.height * ratio);
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  webglCanvas.width = canvas.width;
+  webglCanvas.height = canvas.height;
+  if (webglState?.gl) webglState.gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
 }
 
 function setupAudioGraph() {
@@ -322,6 +330,221 @@ function clearStage(width, height, features) {
   const alpha = 0.28;
   ctx.fillStyle = `rgba(${theme.ink}, ${alpha + features.energy * 0.12})`;
   ctx.fillRect(0, 0, width, height);
+}
+
+const erosionVertexShader = `
+attribute vec2 a_position;
+
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+const erosionFragmentShader = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_treble;
+uniform float u_energy;
+uniform float u_beat;
+uniform vec3 u_theme;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  mat2 r = mat2(0.82, -0.57, 0.57, 0.82);
+  for (int i = 0; i < 6; i++) {
+    v += a * noise(p);
+    p = r * p * 2.03 + 13.7;
+    a *= 0.5;
+  }
+  return v;
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+float terrainPulse() {
+  float groove = 0.55 + 0.45 * sin(u_time * (1.7 + u_mid * 1.8));
+  return clamp(u_bass * 0.9 + u_mid * 0.28 + u_beat * 0.85 + groove * u_energy * 0.35, 0.0, 1.7);
+}
+
+float channelMask(vec2 p) {
+  float pulse = terrainPulse();
+  vec2 w = vec2(
+    fbm(p * 0.72 + vec2(sin(u_time * 0.21) * 0.16, cos(u_time * 0.17) * 0.11)),
+    fbm(p * 0.54 + vec2(cos(u_time * 0.13) * 0.13, sin(u_time * 0.19) * 0.15))
+  );
+  float river = sin((p.x + w.x * (2.15 + pulse * 0.7)) * 2.2) + sin((p.y - w.y * (1.7 + pulse * 0.65)) * 1.35) * 0.55;
+  float thin = 1.0 - smoothstep(0.018, 0.16 + pulse * 0.12, abs(river));
+  float tributary = 1.0 - smoothstep(0.01, 0.09 + u_mid * 0.08 + pulse * 0.045, abs(sin(p.x * 4.0 + p.y * 2.3 + w.y * (4.2 + pulse * 1.6))));
+  return clamp(thin + tributary * 0.45, 0.0, 1.0);
+}
+
+float heightField(vec2 p) {
+  float pulse = terrainPulse();
+  vec2 warp = vec2(
+    fbm(p * 0.9 + vec2(sin(u_time * 0.16) * 0.2, cos(u_time * 0.12) * 0.16)),
+    fbm(p * 0.9 + vec2(9.3 + cos(u_time * 0.14) * 0.18, 2.1 + sin(u_time * 0.11) * 0.18))
+  );
+  p += (warp - 0.5) * (0.78 + u_mid * 1.15 + pulse * 0.72);
+  float base = fbm(p * (1.35 + pulse * 0.18));
+  float ridges = 1.0 - abs(2.0 * fbm(p * (2.25 + u_treble * 0.3) + warp * (1.25 + pulse * 1.05)) - 1.0);
+  float channels = channelMask(p);
+  float lift = 0.72 + pulse * 0.42;
+  float ridgeGain = 0.28 + u_treble * 0.2 + pulse * 0.22;
+  float erosionDepth = 0.26 + u_bass * 0.28 + pulse * 0.34;
+  float eroded = base * lift + ridges * ridgeGain - channels * erosionDepth;
+  return eroded * (0.92 + pulse * 0.18);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+  vec2 p = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / min(u_resolution.x, u_resolution.y);
+  p *= 1.78;
+
+  float h = heightField(p);
+  float e = 0.006;
+  float hx = heightField(p + vec2(e, 0.0)) - heightField(p - vec2(e, 0.0));
+  float hy = heightField(p + vec2(0.0, e)) - heightField(p - vec2(0.0, e));
+  vec3 n = normalize(vec3(-hx * 2.5, -hy * 2.5, 1.0));
+  vec3 light = normalize(vec3(-0.42, 0.58, 0.7));
+  float shade = clamp(dot(n, light), 0.0, 1.0);
+  float channels = channelMask(p);
+  float pulse = terrainPulse();
+  float contours = 1.0 - smoothstep(0.0, 0.04 + u_mid * 0.02, abs(fract(h * (7.0 + pulse * 5.0)) - 0.5));
+  float sediment = fbm(p * (7.5 + pulse * 2.0) + vec2(sin(u_time * 0.24), cos(u_time * 0.18)) * 0.18);
+  float grain = hash(gl_FragCoord.xy + floor(u_time * 30.0)) - 0.5;
+
+  vec3 deep = hsv2rgb(vec3(u_theme.x + 0.48, 0.72, 0.08 + u_energy * 0.05));
+  vec3 silt = hsv2rgb(vec3(u_theme.y, 0.66, 0.22 + h * 0.24 + u_bass * 0.12));
+  vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.86, 0.62 + u_treble * 0.2));
+  vec3 water = hsv2rgb(vec3(u_theme.x, 0.82, 0.48 + u_mid * 0.2));
+
+  vec3 color = mix(deep, silt, smoothstep(-0.15, 0.78, h));
+  color = mix(color, ridge, smoothstep(0.52, 0.9, h) * (0.28 + shade * 0.34));
+  color = mix(color, water, channels * (0.46 + pulse * 0.28));
+  color += ridge * contours * (0.1 + u_treble * 0.2 + pulse * 0.1);
+  color += water * pow(channels, 2.0) * (0.12 + pulse * 0.18 + u_beat * 0.18);
+  color *= 0.58 + shade * 0.72;
+  color += sediment * 0.035 + grain * (0.025 + u_treble * 0.04);
+  color += vec3(1.0, 0.88, 0.62) * u_beat * 0.12;
+
+  float vignette = smoothstep(1.55, 0.18, length(uv - 0.5));
+  color *= 0.38 + vignette * 0.9;
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader) || "Shader compile failed");
+  }
+  return shader;
+}
+
+function initErosionWebgl() {
+  if (webglState || !webglSupported) return webglState;
+  const gl = webglCanvas.getContext("webgl", {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    webglSupported = false;
+    return null;
+  }
+
+  try {
+    const vertex = createShader(gl, gl.VERTEX_SHADER, erosionVertexShader);
+    const fragment = createShader(gl, gl.FRAGMENT_SHADER, erosionFragmentShader);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(program) || "Shader link failed");
+    }
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    webglState = {
+      gl,
+      program,
+      buffer,
+      position: gl.getAttribLocation(program, "a_position"),
+      uniforms: {
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        time: gl.getUniformLocation(program, "u_time"),
+        bass: gl.getUniformLocation(program, "u_bass"),
+        mid: gl.getUniformLocation(program, "u_mid"),
+        treble: gl.getUniformLocation(program, "u_treble"),
+        energy: gl.getUniformLocation(program, "u_energy"),
+        beat: gl.getUniformLocation(program, "u_beat"),
+        theme: gl.getUniformLocation(program, "u_theme"),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    webglSupported = false;
+    return null;
+  }
+
+  return webglState;
+}
+
+function drawErosionFlow(features) {
+  const state = initErosionWebgl();
+  if (!state) return;
+  const { gl, program, buffer, position, uniforms } = state;
+  const theme = themes[currentTheme];
+  const sensitivity = Number(sensitivityInput.value);
+  gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
+  gl.uniform1f(uniforms.time, frame / 60);
+  gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
+  gl.uniform1f(uniforms.mid, Math.min(1, features.mid * sensitivity));
+  gl.uniform1f(uniforms.treble, Math.min(1, features.treble * sensitivity));
+  gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
+  gl.uniform1f(uniforms.beat, features.beat);
+  gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
 function drawRing(width, height, features) {
@@ -1423,6 +1646,16 @@ function render() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
   const features = audioFeatures();
+  const isWebglMode = currentMode === "erosion";
+
+  document.body.classList.toggle("webgl-mode", isWebglMode);
+
+  if (isWebglMode) {
+    ctx.clearRect(0, 0, width, height);
+    drawErosionFlow(features);
+    requestAnimationFrame(render);
+    return;
+  }
 
   clearStage(width, height, features);
 
@@ -1745,6 +1978,7 @@ modeButtons.forEach((button) => {
     modeButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     currentMode = button.dataset.mode;
+    document.body.classList.toggle("webgl-mode", currentMode === "erosion");
   });
 });
 
@@ -1764,12 +1998,14 @@ recordButton.addEventListener("click", () => {
     return;
   }
 
-  if (!window.MediaRecorder || !canvas.captureStream) {
+  const captureCanvas = currentMode === "erosion" ? webglCanvas : canvas;
+
+  if (!window.MediaRecorder || !captureCanvas.captureStream) {
     setStatus("unsupportedRecord");
     return;
   }
 
-  const canvasStream = canvas.captureStream(30);
+  const canvasStream = captureCanvas.captureStream(30);
   const audioStream = audio.captureStream ? audio.captureStream() : null;
   const tracks = [...canvasStream.getVideoTracks(), ...(audioStream ? audioStream.getAudioTracks() : [])];
   const mixedStream = new MediaStream(tracks);
