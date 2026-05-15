@@ -65,6 +65,7 @@ const translations = {
     modeSeascape: "海面光景",
     modeSunWater: "柔浪日海",
     modeCoastal: "海岸风景",
+    modeCatDivision: "猫影分割",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -130,6 +131,7 @@ const translations = {
     modeSeascape: "Sea Light",
     modeSunWater: "Sunlit Water",
     modeCoastal: "Coastal Landscape",
+    modeCatDivision: "Cat Division",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -238,6 +240,7 @@ let webglState;
 let seascapeState;
 let sunWaterState;
 let coastalState;
+let catDivisionState;
 let webglSupported = true;
 const tuningDefaults = {
   size: 1,
@@ -378,6 +381,16 @@ const modeTuningConfigs = {
     { key: "sharpness", zh: "拼贴锐度", en: "Mosaic Edge", min: 0.35, max: 1.7, step: 0.05 },
     { key: "vibration", zh: "海风律动", en: "Coastal Breeze", min: 0, max: 1.9, step: 0.05 },
     { key: "hue", zh: "季节色相", en: "Season Hue", min: -180, max: 180, step: 5 },
+  ],
+  catdivision: [
+    { key: "size", zh: "构图尺度", en: "Composition Scale", min: 0.75, max: 1.55, step: 0.05 },
+    { key: "density", zh: "分割层数", en: "Division Rows", min: 0.45, max: 2.0, step: 0.05 },
+    { key: "line", zh: "线条厚度", en: "Line Weight", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "gradient", zh: "明暗反差", en: "Contrast", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "黑白纯度", en: "Monochrome Purity", min: 0.35, max: 1.5, step: 0.05 },
+    { key: "sharpness", zh: "边缘锐度", en: "Edge Sharpness", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "vibration", zh: "猫影律动", en: "Cat Rhythm", min: 0, max: 1.9, step: 0.05 },
+    { key: "hue", zh: "纸面色相", en: "Paper Tint", min: -180, max: 180, step: 5 },
   ],
 };
 let visualTuning = { ...tuningDefaults };
@@ -534,7 +547,7 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   webglCanvas.width = canvas.width;
   webglCanvas.height = canvas.height;
-  const gl = webglState?.gl || seascapeState?.gl || sunWaterState?.gl || coastalState?.gl;
+  const gl = webglState?.gl || seascapeState?.gl || sunWaterState?.gl || coastalState?.gl || catDivisionState?.gl;
   if (gl) {
     gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
     resetErosionFeedback();
@@ -1421,6 +1434,175 @@ void main() {
 }
 `;
 
+const catDivisionFragmentShader = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_treble;
+uniform float u_energy;
+uniform float u_beat;
+uniform vec3 u_theme;
+uniform float u_scale;
+uniform float u_density;
+uniform float u_gradient;
+uniform float u_saturation;
+uniform float u_sharpness;
+uniform float u_line;
+
+float lineField;
+float yP;
+vec3 catPos;
+vec3 catSize;
+
+float fastTanh(float x) {
+  float e = exp(2.0 * clamp(x, -8.0, 8.0));
+  return (e - 1.0) / (e + 1.0);
+}
+
+float thCos(float a, float b) {
+  return fastTanh(a * cos(b)) / fastTanh(a);
+}
+
+float hash11(float p) {
+  p = fract(p * 0.1031);
+  p *= p + 33.33;
+  p *= p + p;
+  return fract(p);
+}
+
+vec2 hash22(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+float noise2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(dot(hash22(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)), dot(hash22(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+    mix(dot(hash22(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)), dot(hash22(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+float smin(float a, float b, float k) {
+  k *= 4.0;
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+
+float sdParabola(vec2 pos, float k) {
+  pos.x = abs(pos.x);
+  float p = (pos.y * k - 0.5) / 3.0;
+  float q = pos.x * k / 4.0;
+  float h = q * q - p * p * p;
+  float x;
+
+  if (h > 0.0) {
+    float r = pow(q + sqrt(h), 1.0 / 3.0);
+    x = r + p / r;
+  } else {
+    float r = sqrt(max(p, 0.0001));
+    float denom = max(abs(p * r), 0.0001);
+    x = 2.0 * r * cos(acos(clamp(q / denom, -1.0, 1.0)) / 3.0);
+  }
+
+  vec2 d = pos - vec2(x, x * x) / k;
+  return length(d) * sign(d.x);
+}
+
+float catShape(vec2 p) {
+  p.y += yP;
+
+  float x = mix(catPos.x, catPos.y, catPos.z) * 20.0;
+  float y = -4.0 + catSize.x;
+  float k = (-0.5 - yP) * 0.3;
+
+  x += x * k;
+  p.x += p.x * k;
+  k = 2.0;
+  p.x += mix(0.0, catPos.x - catPos.y, 0.5 - abs(catPos.z - 0.5)) * p.y * 1.5;
+
+  return -smin(
+    -sdParabola(-p - vec2(x, y), k + catSize.y),
+    sdParabola(p + vec2(x, -1.5 - catSize.z), k + catSize.y * 0.5),
+    0.01
+  );
+}
+
+float catLine(vec2 p, float seed, float rhythm) {
+  p *= 2.0;
+  lineField = p.y
+    - noise2(vec2(p.x * 0.2 + sin(u_time * 0.28 + seed) * 0.5, u_time * 0.42 + seed * 0.5)) * (6.7 + rhythm * 1.15) * smoothstep(15.0, 0.0, abs(p.x))
+    + noise2(vec2(p.x, u_time + seed)) * (0.38 + rhythm * 0.16);
+  return smin(lineField, catShape(p + vec2(0.0, lineField * 0.25)), 0.1);
+}
+
+float catEyes(vec2 p, float rhythm) {
+  p += vec2(
+    mix(catPos.x, catPos.y, catPos.z) * 10.0 + mix(0.0, catPos.x - catPos.y, 0.5 - abs(catPos.z - 0.5)) * p.y * 1.5,
+    yP - 0.3 + catSize.z * 2.0 + lineField * 0.2
+  );
+  p.x *= 1.0 + catSize.z;
+
+  float blink = abs(sin(u_time * (1.35 + rhythm * 0.65)));
+  float eyes = length(abs(p + vec2(sin(u_time * 1.2) * 0.2, 0.0)) + vec2(-0.3, abs(sin(u_time * 1.2) * 0.05))) - (0.09 + rhythm * 0.02) + blink * 0.015;
+
+  p += vec2(sin(u_time * 1.2) * 0.3, 0.2);
+  float nose = sin(atan(p.x, p.y) - 1.6) / 3.12415 * 12.0;
+  return min(eyes, length(p) - 0.15 + catSize.z * 0.2 + sin(nose) * 0.025);
+}
+
+void main() {
+  vec2 r = u_resolution.xy;
+  vec2 p = (gl_FragCoord.xy * 2.0 - r) / min(r.x, r.y) * (8.0 / max(u_scale, 0.3));
+  vec3 ink = vec3(0.0);
+  vec3 paperTint = 0.94 + 0.06 * cos(6.28318 * (u_theme.x + vec3(0.0, 0.12, 0.24)));
+  vec3 color = ink;
+
+  float rhythm = clamp(u_bass * 0.55 + u_mid * 0.25 + u_beat * 0.65, 0.0, 1.35);
+  float rows = 6.0 + u_density * 4.0;
+  float ms = (20.0 / min(r.x, r.y)) / max(u_line, 0.25);
+
+  if (max(abs(p.x), abs(p.y)) < 8.0) {
+    for (int row = 0; row < 12; row++) {
+      float lane = 4.0 - float(row) * (8.0 / 11.0);
+      float nl = floor(p.y * rows * 0.12) + lane * 0.5;
+      float cycle = 8.0 + hash11(nl) * 4.0;
+      float localTime = u_time * (0.86 + rhythm * 0.18) + hash11(nl) * 1000.0;
+      float n = hash11(floor(localTime / cycle));
+
+      catPos = vec3(
+        n - 0.5,
+        hash11(floor(localTime / cycle + 1.0)) - 0.5,
+        smoothstep(0.35, 0.68, mod(localTime, cycle) / cycle)
+      );
+      yP = (1.0 - thCos(4.6 + rhythm * 0.65, (localTime + cycle * 0.5) / cycle * 6.28318)) * (3.4 + rhythm * 0.42) - 0.55;
+      catSize = vec3(hash11(n) - 1.5, hash11(n + 0.1) - 0.5, hash11(n + 0.2) * 0.25);
+
+      vec2 local = vec2(p.x, fract(p.y * rows * 0.12) - lane * 0.5);
+      float k = catLine(local, nl, rhythm);
+      float stroke = smoothstep(ms, -ms, abs(k) - max(ms, 0.035 / max(u_line, 0.25)));
+      float eyes = smoothstep(ms, -ms, catEyes(local, rhythm));
+      float laneMask = smoothstep(7.9, 7.2, abs(p.x)) * smoothstep(7.9, 7.2, abs(p.y));
+
+      color = mix(color, paperTint, max(stroke, eyes) * laneMask);
+    }
+  }
+
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, u_saturation);
+  color = mix(vec3(0.5), color, 0.68 + u_sharpness * 0.22);
+  color = mix(ink, color, 0.72 + u_gradient * 0.24);
+  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -1784,8 +1966,92 @@ function drawCoastalLandscape(features) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
+function initCatDivisionWebgl() {
+  if (catDivisionState || !webglSupported) return catDivisionState;
+  const gl = webglCanvas.getContext("webgl", {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    webglSupported = false;
+    return null;
+  }
+
+  try {
+    const program = createProgram(gl, erosionVertexShader, catDivisionFragmentShader);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    catDivisionState = {
+      gl,
+      program,
+      buffer,
+      position: gl.getAttribLocation(program, "a_position"),
+      uniforms: {
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        time: gl.getUniformLocation(program, "u_time"),
+        bass: gl.getUniformLocation(program, "u_bass"),
+        mid: gl.getUniformLocation(program, "u_mid"),
+        treble: gl.getUniformLocation(program, "u_treble"),
+        energy: gl.getUniformLocation(program, "u_energy"),
+        beat: gl.getUniformLocation(program, "u_beat"),
+        theme: gl.getUniformLocation(program, "u_theme"),
+        scale: gl.getUniformLocation(program, "u_scale"),
+        density: gl.getUniformLocation(program, "u_density"),
+        gradient: gl.getUniformLocation(program, "u_gradient"),
+        saturation: gl.getUniformLocation(program, "u_saturation"),
+        sharpness: gl.getUniformLocation(program, "u_sharpness"),
+        line: gl.getUniformLocation(program, "u_line"),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    webglSupported = false;
+    return null;
+  }
+
+  return catDivisionState;
+}
+
+function drawCatDivision(features) {
+  const state = initCatDivisionWebgl();
+  if (!state) return;
+  const { gl, program, buffer, position, uniforms } = state;
+  const theme = tunedTheme();
+  const sensitivity = Number(sensitivityInput.value);
+  gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
+  gl.uniform1f(uniforms.time, frame / 60);
+  gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
+  gl.uniform1f(uniforms.mid, Math.min(1, features.mid * sensitivity));
+  gl.uniform1f(uniforms.treble, Math.min(1, features.treble * sensitivity));
+  gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
+  gl.uniform1f(uniforms.beat, features.beat);
+  gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.uniform1f(uniforms.scale, visualTuning.size);
+  gl.uniform1f(uniforms.density, visualTuning.density);
+  gl.uniform1f(uniforms.gradient, visualTuning.gradient);
+  gl.uniform1f(uniforms.saturation, visualTuning.saturation);
+  gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
+  gl.uniform1f(uniforms.line, visualTuning.line);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
 function isWebglModeName(mode) {
-  return mode === "erosion" || mode === "seascape" || mode === "sunwater" || mode === "coastal";
+  return mode === "erosion" || mode === "seascape" || mode === "sunwater" || mode === "coastal" || mode === "catdivision";
 }
 
 function drawRing(width, height, features) {
@@ -2897,6 +3163,7 @@ function render() {
     if (currentMode === "seascape") drawSeascape(features);
     if (currentMode === "sunwater") drawSunWater(features);
     if (currentMode === "coastal") drawCoastalLandscape(features);
+    if (currentMode === "catdivision") drawCatDivision(features);
     requestAnimationFrame(render);
     return;
   }
