@@ -1202,12 +1202,27 @@ float noise2(vec2 p) {
   );
 }
 
-vec3 drawSky(vec2 uv, vec2 sunShift, float sm) {
+float musicPulse() {
+  return clamp(u_bass * 0.45 + u_mid * 0.28 + u_treble * 0.14 + u_beat * 0.34, 0.0, 1.25);
+}
+
+float phaseWeight(float target) {
+  float phaseTime = u_time / 30.0;
+  float current = floor(mod(phaseTime, 5.0));
+  float next = mod(current + 1.0, 5.0);
+  float fade = smoothstep(0.82, 1.0, fract(phaseTime));
+  float currentMask = 1.0 - step(0.5, abs(current - target));
+  float nextMask = 1.0 - step(0.5, abs(next - target));
+  return mix(currentMask, nextMask, fade);
+}
+
+vec3 drawSky(vec2 uv, vec2 sunShift, float sm, float skyPhase) {
+  float pulse = musicPulse() * skyPhase;
   vec2 u = uv + sunShift;
   float rings = 38.0 + u_density * 24.0;
   vec2 id = vec2((length(u) + 0.01) * rings, 0.0);
   float segments = max(3.0, floor(id.x) * (0.065 + u_density * 0.025));
-  float ringShift = (hash12(floor(id.xx)) * 0.5 + 0.25) * (u_time + 10.0) * 0.16;
+  float ringShift = (hash12(floor(id.xx)) * 0.5 + 0.25) * (u_time + 10.0) * (0.16 + pulse * 0.018);
   vec2 turned = rotate2D(u, ringShift);
   id.y = atan(turned.y, turned.x) * segments;
   vec2 local = fract(id);
@@ -1221,17 +1236,18 @@ vec3 drawSky(vec2 uv, vec2 sunShift, float sm) {
 
   float cloud = noise2(center * vec2(0.5, 1.0) - vec2(u_time * 0.1, 0.0));
   cloud *= step(-0.25, center.y);
-  cloud = smoothstep(0.038, 0.062, cloud);
+  cloud = smoothstep(0.038, 0.062, cloud + pulse * 0.018);
   local += noise2(local * vec2(1.0, 4.0) + id) * vec2(0.7, 0.2);
 
   vec3 sky = skyPalette(sin(length(u) - 0.1 + u_theme.x * 0.18)) * 0.36;
   vec3 tile = mix(skyPalette(sin(length(u) - 0.1) + (hash12(id) - 0.5) * 0.15), vec3(1.0), cloud * 0.85);
   float mask = softBar(abs(local.x - 0.5), 0.4, sm * rings / max(u_line, 0.2))
     * softBar(abs(local.y - 0.5), 0.48, sm * segments / max(u_line, 0.2));
-  return mix(sky, tile, mask);
+  return mix(sky, tile * (1.0 + pulse * 0.08), mask);
 }
 
-vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm) {
+vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm, float tidePhase) {
+  float pulse = musicPulse() * tidePhase;
   float cloud = noise2(-sunShift * vec2(0.5, 1.0) - vec2(u_time * 0.1, 0.0));
   cloud = 1.0 - smoothstep(0.0, 0.15, cloud) * 0.5;
   vec2 u = uv * vec2(1.0, 15.0);
@@ -1242,12 +1258,12 @@ vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm) {
     if (id.y + offset < -5.0) {
       vec2 local = fract(u) - 0.5;
       float wave = sin(uv.x * (9.0 + u_density * 4.0) - u_time * 1.0 + id.y + offset);
-      local.y = (local.y + wave * 0.16 - offset) * 4.0;
+      local.y = (local.y + wave * (0.16 + pulse * 0.035) - offset) * 4.0;
       float seed = hash12(vec2(id.y + offset, floor(local.y)));
       float xDensity = 5.0 + seed * 4.0 + u_density * 2.0;
       float yDensity = 24.0 + u_density * 8.0;
       local.x = uv.x * xDensity + sunShift.x * 8.0 + sin(u_time * (0.22 + seed * 0.7)) * 0.45;
-      float track = 0.78 * smoothstep(5.0, 0.0, abs(floor(local.x))) * cloud + 0.08;
+      float track = 0.78 * smoothstep(5.0, 0.0, abs(floor(local.x))) * cloud + 0.08 + pulse * 0.045;
       vec3 baseWater = mix(vec3(0.0, 0.08, 0.42), vec3(0.32, 0.32, 0.02), track);
       color = mix(color, baseWater, softBar(local.y, 0.0, sm * yDensity / max(u_line, 0.2)));
       local += noise2(local * vec2(3.0, 0.5)) * vec2(0.1, 0.6);
@@ -1255,19 +1271,20 @@ vec3 drawWater(vec3 color, vec2 uv, vec2 sunShift, float sm) {
       float strokeMask = softBar(local.y, 0.0, sm * xDensity / max(u_line, 0.2))
         * softBar(abs(fract(local.x) - 0.5), 0.48, sm * xDensity / max(u_line, 0.2))
         * softBar(abs(fract(local.y) - 0.5), 0.3, sm * yDensity / max(u_line, 0.2));
-      color = mix(color, stroke, strokeMask);
+      color = mix(color, stroke * (1.0 + pulse * 0.12), strokeMask);
     }
   }
 
   return color;
 }
 
-vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm) {
+vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm, float grassPhase) {
+  float pulse = musicPulse() * grassPhase;
   float seed = (hash12(id) - 0.5) * 0.25 + 0.5;
   vec2 local = u;
   local -= vec2(0.3, 0.5 - seed * 0.4);
-  float breeze = sin((u_time * 0.7 + seed * 2.0 - id.x * 0.05 - id.y * 0.05) * 2.0 + id.y * 0.5);
-  local.x += breeze * (local.y + 0.5) * 0.28;
+  float breeze = sin((u_time * 0.7 + seed * 2.0 - id.x * 0.05 - id.y * 0.05) * 2.0 + id.y * 0.5 + pulse * 1.2);
+  local.x += breeze * (local.y + 0.5) * (0.28 + pulse * 0.08);
   vec2 d = abs(local) - vec2(0.02, 0.5 - seed * 0.5);
   float blade = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
   blade -= noise2(local * 7.0 + id) * 0.1;
@@ -1275,13 +1292,14 @@ vec4 drawGrassBlade(vec2 u, vec2 id, vec3 grassColor, float sm) {
   vec3 outline = grassColor * 0.24;
   vec3 fill = grassColor * (1.05 + local.y * 1.8) * (1.7 - seed * 2.1);
   vec3 c = mix(outline, fill, softBar(blade, 0.04, sm * 5.2));
-  return vec4(c, alpha);
+  return vec4(c * (1.0 + pulse * 0.08), alpha);
 }
 
-vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
-  float swing = sin(u_time * 0.22);
+vec4 drawTree(vec2 uv, vec2 treePos, float sm, float treePhase) {
+  float pulse = musicPulse() * treePhase;
+  float swing = sin(u_time * 0.22 + pulse * 0.9);
   vec2 u = uv + treePos;
-  u.x -= sin(u.y + 1.0) * 0.16 * (swing + 0.75);
+  u.x -= sin(u.y + 1.0) * (0.16 + pulse * 0.035) * (swing + 0.75);
   u += noise2(u * 4.5 - 7.0) * 0.18;
 
   vec2 trunkGrid = u * vec2(10.0, 60.0);
@@ -1294,8 +1312,8 @@ vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
 
   for (int layer = 0; layer < 4; layer++) {
     float xs = float(layer);
-    vec2 crown = uv + treePos + vec2(xs / 30.0 * 0.5 - (swing + 0.75) * 0.12, -0.7);
-    crown += noise2(crown * vec2(2.0, 1.0) + vec2(-u_time * 0.32 + xs * 0.05, 0.0)) * vec2(-0.2, 0.08) * smoothstep(0.5, -1.0, crown.y + 0.7);
+    vec2 crown = uv + treePos + vec2(xs / 30.0 * 0.5 - (swing + 0.75) * (0.12 + pulse * 0.018), -0.7);
+    crown += noise2(crown * vec2(2.0, 1.0) + vec2(-u_time * (0.32 + pulse * 0.04) + xs * 0.05, 0.0)) * vec2(-0.2, 0.08) * smoothstep(0.5, -1.0, crown.y + 0.7);
     vec2 tile = crown * vec2(30.0, 1.0);
     float rowSeed = hash12(floor(tile.xx) + xs * 1.4);
     float rows = 5.0 + rowSeed * 7.0;
@@ -1309,7 +1327,7 @@ vec4 drawTree(vec2 uv, vec2 treePos, float sm) {
     float mask = (top + bottom) * step(abs(cell.x), 0.5) * softBar(abs(local.x - 0.5), 0.35, sm * 15.0);
     local += noise2(tileSave * vec2(1.0, 3.0)) * vec2(0.3);
     vec3 leaf = hueColor((tileSeed + (sin(u_time * 0.08) * 0.5 + 0.5)) * 0.2 + u_theme.z * 0.1) - cell.x;
-    vec3 crownColor = mix(leaf * 0.15, leaf * 0.58 * (0.7 + xs * 0.2), softBar(abs(local.y - 0.5), 0.47, sm * rows) * softBar(abs(local.x - 0.5), 0.2, sm * 30.0));
+    vec3 crownColor = mix(leaf * 0.15, leaf * 0.58 * (0.7 + xs * 0.2) * (1.0 + pulse * 0.08), softBar(abs(local.y - 0.5), 0.47, sm * rows) * softBar(abs(local.x - 0.5), 0.2, sm * 30.0));
     result = mix(result, vec4(crownColor, mask), mask);
   }
 
@@ -1326,8 +1344,8 @@ float fishShape(vec2 p, float tailWave, float sm) {
   return clamp(max(body, tail) + head * 0.18, 0.0, 1.0);
 }
 
-vec4 drawFish(vec2 uv, float seed, float sm) {
-  float music = clamp(u_bass * 0.75 + u_mid * 0.35 + u_beat * 0.9, 0.0, 1.8);
+vec4 drawFish(vec2 uv, float seed, float sm, float fishPhase) {
+  float music = clamp(u_bass * 0.75 + u_mid * 0.35 + u_beat * 0.9, 0.0, 1.8) * (0.24 + fishPhase * 0.76);
   float swim = u_time * (0.055 + seed * 0.025) + music * 0.035;
   vec2 pos = vec2(
     mix(-1.12, 1.08, fract(seed * 7.31 + swim)),
@@ -1353,15 +1371,20 @@ void main() {
   uv /= max(u_scale, 0.25);
   float sm = 3.0 / r.y;
   float aspect = r.x / r.y;
+  float skyPhase = phaseWeight(0.0);
+  float grassPhase = phaseWeight(1.0);
+  float treePhase = phaseWeight(2.0);
+  float tidePhase = phaseWeight(3.0);
+  float fishPhase = phaseWeight(4.0);
   vec2 sunPos = vec2(aspect * 0.42, -0.53);
   vec2 treePos = vec2(-aspect * 0.42, -0.2);
-  vec2 sunShift = rotate2D(sunPos, noise2(uv + u_time * 0.1) * 0.18);
+  vec2 sunShift = rotate2D(sunPos, noise2(uv + u_time * 0.1) * (0.18 + musicPulse() * skyPhase * 0.035));
 
-  vec3 color = drawSky(uv, sunShift, sm);
+  vec3 color = drawSky(uv, sunShift, sm, skyPhase);
   if (uv.y < -0.35) {
-    color = drawWater(color, uv, sunShift, sm);
+    color = drawWater(color, uv, sunShift, sm, tidePhase);
     for (int i = 0; i < 5; i++) {
-      vec4 fish = drawFish(uv, 0.13 + float(i) * 0.19, sm);
+      vec4 fish = drawFish(uv, 0.13 + float(i) * 0.19, sm, fishPhase);
       color = mix(color, fish.rgb, fish.a);
     }
   }
@@ -1377,7 +1400,7 @@ void main() {
       for (int xi = 0; xi < 5; xi++) {
         vec2 id = floor(grassGrid) + vec2(float(xi) - 2.0, -float(yi));
         vec2 local = (fract(grassGrid) + vec2(1.0 - (float(xi) - 2.0), float(yi))) / vec2(5.0, 3.0);
-        vec4 blade = drawGrassBlade(local, id, grassColor, sm);
+        vec4 blade = drawGrassBlade(local, id, grassColor, sm, grassPhase);
         float front = step(id.y, -1.0);
         color = mix(color, blade.rgb, blade.a * front);
         grassMask = max(grassMask, blade.a * step(id.y, -5.0));
@@ -1386,7 +1409,7 @@ void main() {
   }
 
   if (abs(uv.x + treePos.x - 0.1 - sin(u_time * 0.22) * 0.08) < 0.6) {
-    vec4 tree = drawTree(uv, treePos, sm);
+    vec4 tree = drawTree(uv, treePos, sm, treePhase);
     color = mix(color, tree.rgb, tree.a * (1.0 - grassMask));
   }
 
