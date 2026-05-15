@@ -36,18 +36,6 @@ const starSeeds = Array.from({ length: 90 }, (_, index) => ({
   phase: index * 0.73,
 }));
 
-const galaxySeeds = Array.from({ length: 620 }, (_, index) => {
-  const ring = index % 5;
-  return {
-    t: (Math.sin(index * 12.9898) * 43758.5453) % 1,
-    a: index * 2.399963 + ring * 0.22,
-    r: 0.22 + ring * 0.16 + (((index * 29) % 100) / 100) * 0.16,
-    z: 0.56 + (((index * 47) % 100) / 100) * 0.7,
-    phase: index * 0.41,
-  };
-});
-
-const noteGlyphs = ["♪", "♫", "♬", "♩"];
 const translations = {
   zh: {
     brand: "看见音乐",
@@ -59,7 +47,6 @@ const translations = {
     modeRing: "光谱圆环",
     modeTunnel: "波形隧道",
     modeCurtain: "光幕雕塑",
-    modeStellar: "星河声线",
     modeTerrain: "声波地貌",
     modeLaser: "激光厅",
     modeScanner: "光环扫描",
@@ -82,7 +69,7 @@ const translations = {
     showControls: "显示控制",
     immersive: "沉浸",
     exit: "退出",
-    ready: "选择音乐后即可开始。",
+    ready: "选择或拖入音乐后即可开始。",
     pasteUrl: "请先粘贴一个音频链接。",
     badUrl: "链接格式不正确。",
     resolving: "正在解析视频里的音频流。",
@@ -105,6 +92,8 @@ const translations = {
     saved: "视频已保存。",
     saveCancelled: "已取消保存。",
     downloadTriggered: "已触发下载；如果没有反应，已尝试打开视频预览页。",
+    dragAudio: "松开即可载入音乐文件。",
+    badDrop: "请拖入音频文件。",
   },
   en: {
     brand: "See Music",
@@ -116,7 +105,6 @@ const translations = {
     modeRing: "Spectrum Ring",
     modeTunnel: "Wave Tunnel",
     modeCurtain: "Light Sculpture",
-    modeStellar: "Stellar Line",
     modeTerrain: "Sound Terrain",
     modeLaser: "Laser Cathedral",
     modeScanner: "Light Scanner",
@@ -139,7 +127,7 @@ const translations = {
     showControls: "Show Controls",
     immersive: "Immersive",
     exit: "Exit",
-    ready: "Choose music to begin.",
+    ready: "Choose or drop music to begin.",
     pasteUrl: "Paste an audio link first.",
     badUrl: "Invalid link.",
     resolving: "Resolving audio from the video link.",
@@ -162,6 +150,8 @@ const translations = {
     saved: "Video saved.",
     saveCancelled: "Save cancelled.",
     downloadTriggered: "Download triggered. If nothing happens, a preview tab was opened.",
+    dragAudio: "Drop to load the music file.",
+    badDrop: "Drop an audio file.",
   },
 };
 const hazeSeeds = Array.from({ length: 48 }, (_, index) => ({
@@ -215,6 +205,7 @@ let revealTimer;
 let isSeeking = false;
 let knownDuration = 0;
 let currentLanguage = "zh";
+let dragDepth = 0;
 
 function t(key) {
   return translations[currentLanguage][key] || translations.zh[key] || key;
@@ -480,135 +471,6 @@ function drawCurtain(width, height, features) {
     ctx.ellipse(0, 0, radius * 1.78, radius * 0.36, Math.sin(frame * 0.004) * 0.08, 0, Math.PI * 2);
     ctx.stroke();
   }
-
-  ctx.globalCompositeOperation = "source-over";
-  ctx.restore();
-}
-
-function drawStellar(width, height, features) {
-  const cx = width * 0.58;
-  const cy = height * 0.54;
-  const size = Math.min(width, height);
-  const sensitivity = Number(sensitivityInput.value);
-  const baseline = height * 0.56;
-  const leftEdge = width * 0.05;
-  const rightEdge = width * 0.96;
-  const waveHeight = size * (0.035 + features.mid * 0.08) * sensitivity;
-  const galaxyRadius = size * (0.2 + features.bass * 0.08 + features.beat * 0.05);
-
-  ctx.save();
-  ctx.fillStyle = `rgba(0, 0, 0, ${0.5 - Math.min(features.energy * 0.18, 0.18)})`;
-  ctx.fillRect(0, 0, width, height);
-  ctx.globalCompositeOperation = "lighter";
-
-  for (const star of starSeeds) {
-    const twinkle = Math.sin(frame * 0.035 + star.phase) * 0.5 + 0.5;
-    const x = star.x * width;
-    const y = star.y * height;
-    const radius = star.size + twinkle * features.treble * 3;
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.18 + twinkle * 0.34 + features.treble * 0.22})`;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (twinkle > 0.86) {
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.12 + features.treble * 0.28})`;
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      ctx.moveTo(x - radius * 3, y);
-      ctx.lineTo(x + radius * 3, y);
-      ctx.moveTo(x, y - radius * 3);
-      ctx.lineTo(x, y + radius * 3);
-      ctx.stroke();
-    }
-  }
-
-  ctx.lineCap = "round";
-  for (let pass = 0; pass < 4; pass += 1) {
-    ctx.beginPath();
-    for (let i = 0; i < timeData.length; i += 5) {
-      const t = i / (timeData.length - 1);
-      const wave = (timeData[i] - 128) / 128;
-      const x = leftEdge + t * (rightEdge - leftEdge);
-      const drift = Math.sin(t * Math.PI * 7 + frame * 0.018 + pass) * features.treble * 10;
-      const y = baseline + wave * waveHeight * (1 + pass * 0.22) + drift;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.18 + pass * 0.12 + features.energy * 0.28})`;
-    ctx.lineWidth = 1.4 + pass * 1.4 + features.beat * 3;
-    ctx.stroke();
-  }
-
-  const pulseX = width * (0.2 + ((frame * 0.0018) % 0.7));
-  const pulseY = baseline + Math.sin(frame * 0.027) * size * 0.08;
-  const beamGradient = ctx.createLinearGradient(pulseX - 120, pulseY, pulseX + 90, pulseY);
-  beamGradient.addColorStop(0, "rgba(255,255,255,0)");
-  beamGradient.addColorStop(0.55, `rgba(255,255,255,${0.34 + features.beat * 0.48})`);
-  beamGradient.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.strokeStyle = beamGradient;
-  ctx.lineWidth = 8 + features.beat * 8;
-  ctx.beginPath();
-  ctx.moveTo(pulseX - 150, pulseY - features.mid * 40);
-  ctx.lineTo(pulseX + 80, pulseY + features.mid * 28);
-  ctx.stroke();
-
-  for (const seed of galaxySeeds) {
-    const bin = Math.floor(seed.t * frequencyData.length * 0.68);
-    const amp = ((frequencyData[bin] || 0) / 255) ** 1.15;
-    const angle = seed.a + frame * 0.0025 * seed.z + amp * 0.6;
-    const radius = galaxyRadius * seed.r * (0.86 + amp * sensitivity * 0.75);
-    const spiral = angle + radius * 0.012;
-    const x = cx + Math.cos(spiral) * radius * 1.58;
-    const y = cy + Math.sin(spiral) * radius * 0.76 + Math.sin(frame * 0.012 + seed.phase) * amp * 18;
-    const dot = 0.65 + amp * 2.9 + features.beat * 1.6;
-    const alpha = 0.14 + amp * 0.78;
-
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(x, y, dot, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  for (let i = 0; i < 22; i += 1) {
-    const t = i / 21;
-    const bin = Math.floor(t * frequencyData.length * 0.4);
-    const amp = (frequencyData[bin] || 0) / 255;
-    const x = width * (0.08 + t * 0.82);
-    const y = baseline + Math.sin(frame * 0.018 + i) * size * 0.12 - amp * size * 0.18;
-    const length = 18 + amp * 120 * sensitivity;
-    ctx.strokeStyle = `rgba(255,255,255,${0.14 + amp * 0.54})`;
-    ctx.lineWidth = 1 + amp * 3;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + length * 0.38, y - length);
-    ctx.stroke();
-    ctx.fillStyle = `rgba(255,255,255,${0.3 + amp * 0.64})`;
-    ctx.beginPath();
-    ctx.arc(x, y, 2 + amp * 5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (features.energy > 0.16) {
-    ctx.font = `${Math.round(18 + features.energy * 24)}px Georgia, serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (let i = 0; i < 5; i += 1) {
-      const bin = 20 + i * 28;
-      const amp = (frequencyData[bin] || 0) / 255;
-      if (amp < 0.22) continue;
-      const x = cx + Math.cos(frame * 0.006 + i * 1.4) * galaxyRadius * (0.45 + i * 0.13);
-      const y = cy + Math.sin(frame * 0.008 + i * 1.7) * galaxyRadius * 0.48;
-      ctx.fillStyle = `rgba(255,255,255,${0.18 + amp * 0.52})`;
-      ctx.fillText(noteGlyphs[i % noteGlyphs.length], x, y);
-    }
-  }
-
-  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, galaxyRadius * 2.2);
-  glow.addColorStop(0, `rgba(255,255,255,${0.03 + features.energy * 0.12})`);
-  glow.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, width, height);
 
   ctx.globalCompositeOperation = "source-over";
   ctx.restore();
@@ -1403,7 +1265,6 @@ function render() {
   if (currentMode === "ring") drawRing(width, height, features);
   if (currentMode === "tunnel") drawTunnel(width, height, features);
   if (currentMode === "curtain") drawCurtain(width, height, features);
-  if (currentMode === "stellar") drawStellar(width, height, features);
   if (currentMode === "terrain") drawTerrain(width, height, features);
   if (currentMode === "laser") drawLaserCathedral(width, height, features);
   if (currentMode === "scanner") drawLightScanner(width, height, features);
@@ -1597,13 +1458,58 @@ function peekControls() {
   }, 1800);
 }
 
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files?.[0];
-  if (!file) return;
+function loadLocalAudioFile(file) {
+  if (!file?.type?.startsWith("audio/")) {
+    setStatus("badDrop");
+    return;
+  }
 
   const url = URL.createObjectURL(file);
   setAudioSource(url, file.name);
   setStatus("localLoaded");
+}
+
+function hasDraggedFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+
+  loadLocalAudioFile(file);
+});
+
+window.addEventListener("dragenter", (event) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  dragDepth += 1;
+  document.body.classList.add("dragging-audio");
+  setStatus("dragAudio");
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+});
+
+window.addEventListener("dragleave", (event) => {
+  if (!hasDraggedFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) {
+    document.body.classList.remove("dragging-audio");
+    if (!audio.src) setStatus("ready");
+  }
+});
+
+window.addEventListener("drop", (event) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragging-audio");
+  const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("audio/"));
+  loadLocalAudioFile(file);
 });
 
 loadUrlButton.addEventListener("click", loadAudioUrl);
