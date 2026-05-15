@@ -447,18 +447,18 @@ void main() {
   float grain = hash(gl_FragCoord.xy + floor(u_time * 30.0)) - 0.5;
 
   vec3 deep = hsv2rgb(vec3(u_theme.x + 0.48, 0.72, 0.08 + u_energy * 0.05));
-  vec3 silt = hsv2rgb(vec3(u_theme.y, 0.66, 0.22 + h * 0.24 + u_bass * 0.12));
-  vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.86, 0.62 + u_treble * 0.2));
-  vec3 water = hsv2rgb(vec3(u_theme.x, 0.82, 0.48 + u_mid * 0.2));
+  vec3 silt = hsv2rgb(vec3(u_theme.y, 0.62, 0.16 + h * 0.18 + u_bass * 0.06));
+  vec3 ridge = hsv2rgb(vec3(u_theme.z, 0.78, 0.38 + u_treble * 0.12));
+  vec3 water = hsv2rgb(vec3(u_theme.x, 0.74, 0.3 + u_mid * 0.12));
 
   vec3 color = mix(deep, silt, smoothstep(-0.15, 0.78, h));
-  color = mix(color, ridge, smoothstep(0.52, 0.9, h) * (0.28 + shade * 0.34));
-  color = mix(color, water, channels * (0.46 + pulse * 0.28));
-  color += ridge * contours * (0.1 + u_treble * 0.2 + pulse * 0.1);
-  color += water * pow(channels, 2.0) * (0.12 + pulse * 0.18 + u_beat * 0.18);
-  color *= 0.58 + shade * 0.72;
-  color += sediment * 0.035 + grain * (0.025 + u_treble * 0.04);
-  color += vec3(1.0, 0.88, 0.62) * u_beat * 0.12;
+  color = mix(color, ridge, smoothstep(0.52, 0.9, h) * (0.18 + shade * 0.24));
+  color = mix(color, water, channels * (0.34 + pulse * 0.18));
+  color += ridge * contours * (0.045 + u_treble * 0.1 + pulse * 0.04);
+  color += water * pow(channels, 2.0) * (0.055 + pulse * 0.09 + u_beat * 0.08);
+  color *= 0.42 + shade * 0.48;
+  color += sediment * 0.018 + grain * (0.012 + u_treble * 0.018);
+  color += vec3(1.0, 0.82, 0.55) * u_beat * 0.035;
 
   vec2 texel = 1.0 / u_resolution;
   vec3 prev = texture2D(u_previous, v_uv).rgb;
@@ -468,13 +468,14 @@ void main() {
     texture2D(u_previous, v_uv + vec2(0.0, texel.y)).rgb +
     texture2D(u_previous, v_uv - vec2(0.0, texel.y)).rgb
   ) * 0.25;
-  vec3 memory = mix(prev, prevBlur, 0.2 + u_mid * 0.18);
-  memory *= 0.955 - u_energy * 0.018;
-  vec3 excitation = color * (0.22 + pulse * 0.2 + u_beat * 0.18);
+  vec3 memory = mix(prev, prevBlur, 0.28 + u_mid * 0.2);
+  memory *= 0.885 - u_energy * 0.025;
+  vec3 excitation = color * (0.12 + pulse * 0.09 + u_beat * 0.06);
   color = mix(color, memory + excitation, u_feedback);
+  color = color / (1.0 + color * 1.55);
 
   float vignette = smoothstep(1.55, 0.18, length(uv - 0.5));
-  color *= 0.38 + vignette * 0.9;
+  color *= 0.34 + vignette * 0.72;
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -648,7 +649,7 @@ function drawErosionFlow(features) {
   gl.uniform1f(uniforms.beat, features.beat);
   gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
   gl.uniform1i(uniforms.previous, 0);
-  gl.uniform1f(uniforms.feedback, 0.66 + Math.min(0.18, features.energy * 0.18));
+  gl.uniform1f(uniforms.feedback, 0.48 + Math.min(0.12, features.energy * 0.12));
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
