@@ -265,7 +265,10 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   webglCanvas.width = canvas.width;
   webglCanvas.height = canvas.height;
-  if (webglState?.gl) webglState.gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  if (webglState?.gl) {
+    webglState.gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+    resetErosionFeedback();
+  }
 }
 
 function setupAudioGraph() {
@@ -334,8 +337,10 @@ function clearStage(width, height, features) {
 
 const erosionVertexShader = `
 attribute vec2 a_position;
+varying vec2 v_uv;
 
 void main() {
+  v_uv = a_position * 0.5 + 0.5;
   gl_Position = vec4(a_position, 0.0, 1.0);
 }
 `;
@@ -351,6 +356,9 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_beat;
 uniform vec3 u_theme;
+uniform sampler2D u_previous;
+uniform float u_feedback;
+varying vec2 v_uv;
 
 float hash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -452,9 +460,33 @@ void main() {
   color += sediment * 0.035 + grain * (0.025 + u_treble * 0.04);
   color += vec3(1.0, 0.88, 0.62) * u_beat * 0.12;
 
+  vec2 texel = 1.0 / u_resolution;
+  vec3 prev = texture2D(u_previous, v_uv).rgb;
+  vec3 prevBlur = (
+    texture2D(u_previous, v_uv + vec2(texel.x, 0.0)).rgb +
+    texture2D(u_previous, v_uv - vec2(texel.x, 0.0)).rgb +
+    texture2D(u_previous, v_uv + vec2(0.0, texel.y)).rgb +
+    texture2D(u_previous, v_uv - vec2(0.0, texel.y)).rgb
+  ) * 0.25;
+  vec3 memory = mix(prev, prevBlur, 0.2 + u_mid * 0.18);
+  memory *= 0.955 - u_energy * 0.018;
+  vec3 excitation = color * (0.22 + pulse * 0.2 + u_beat * 0.18);
+  color = mix(color, memory + excitation, u_feedback);
+
   float vignette = smoothstep(1.55, 0.18, length(uv - 0.5));
   color *= 0.38 + vignette * 0.9;
   gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const displayFragmentShader = `
+precision highp float;
+
+uniform sampler2D u_scene;
+varying vec2 v_uv;
+
+void main() {
+  gl_FragColor = texture2D(u_scene, v_uv);
 }
 `;
 
@@ -466,6 +498,55 @@ function createShader(gl, type, source) {
     throw new Error(gl.getShaderInfoLog(shader) || "Shader compile failed");
   }
   return shader;
+}
+
+function createProgram(gl, vertexSource, fragmentSource) {
+  const vertex = createShader(gl, gl.VERTEX_SHADER, vertexSource);
+  const fragment = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || "Shader link failed");
+  }
+  return program;
+}
+
+function createFeedbackTexture(gl, width, height) {
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  return texture;
+}
+
+function createFeedbackTarget(gl, width, height) {
+  const texture = createFeedbackTexture(gl, width, height);
+  const framebuffer = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  return { texture, framebuffer };
+}
+
+function resetErosionFeedback() {
+  if (!webglState?.gl) return;
+  const { gl, feedback } = webglState;
+  if (feedback?.targets) {
+    feedback.targets.forEach((target) => {
+      gl.deleteTexture(target.texture);
+      gl.deleteFramebuffer(target.framebuffer);
+    });
+  }
+
+  const width = Math.max(1, webglCanvas.width);
+  const height = Math.max(1, webglCanvas.height);
+  const targets = [createFeedbackTarget(gl, width, height), createFeedbackTarget(gl, width, height)];
+  webglState.feedback = { width, height, targets, readIndex: 0, initialized: false };
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
 function initErosionWebgl() {
@@ -482,15 +563,8 @@ function initErosionWebgl() {
   }
 
   try {
-    const vertex = createShader(gl, gl.VERTEX_SHADER, erosionVertexShader);
-    const fragment = createShader(gl, gl.FRAGMENT_SHADER, erosionFragmentShader);
-    const program = gl.createProgram();
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(program) || "Shader link failed");
-    }
+    const program = createProgram(gl, erosionVertexShader, erosionFragmentShader);
+    const displayProgram = createProgram(gl, erosionVertexShader, displayFragmentShader);
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -503,8 +577,10 @@ function initErosionWebgl() {
     webglState = {
       gl,
       program,
+      displayProgram,
       buffer,
       position: gl.getAttribLocation(program, "a_position"),
+      displayPosition: gl.getAttribLocation(displayProgram, "a_position"),
       uniforms: {
         resolution: gl.getUniformLocation(program, "u_resolution"),
         time: gl.getUniformLocation(program, "u_time"),
@@ -514,8 +590,14 @@ function initErosionWebgl() {
         energy: gl.getUniformLocation(program, "u_energy"),
         beat: gl.getUniformLocation(program, "u_beat"),
         theme: gl.getUniformLocation(program, "u_theme"),
+        previous: gl.getUniformLocation(program, "u_previous"),
+        feedback: gl.getUniformLocation(program, "u_feedback"),
+      },
+      displayUniforms: {
+        scene: gl.getUniformLocation(displayProgram, "u_scene"),
       },
     };
+    resetErosionFeedback();
   } catch (error) {
     console.error(error);
     webglSupported = false;
@@ -528,14 +610,35 @@ function initErosionWebgl() {
 function drawErosionFlow(features) {
   const state = initErosionWebgl();
   if (!state) return;
-  const { gl, program, buffer, position, uniforms } = state;
+  const { gl, program, displayProgram, buffer, position, displayPosition, uniforms, displayUniforms } = state;
   const theme = themes[currentTheme];
   const sensitivity = Number(sensitivityInput.value);
+  if (!state.feedback || state.feedback.width !== webglCanvas.width || state.feedback.height !== webglCanvas.height) {
+    resetErosionFeedback();
+  }
+
+  const feedback = state.feedback;
+  const read = feedback.targets[feedback.readIndex];
+  const writeIndex = 1 - feedback.readIndex;
+  const write = feedback.targets[writeIndex];
+
+  if (!feedback.initialized) {
+    feedback.targets.forEach((target) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+      gl.clearColor(0.03, 0.04, 0.06, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    });
+    feedback.initialized = true;
+  }
+
   gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, write.framebuffer);
   gl.useProgram(program);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.enableVertexAttribArray(position);
   gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, read.texture);
   gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
   gl.uniform1f(uniforms.time, frame / 60);
   gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
@@ -544,7 +647,20 @@ function drawErosionFlow(features) {
   gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
   gl.uniform1f(uniforms.beat, features.beat);
   gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.uniform1i(uniforms.previous, 0);
+  gl.uniform1f(uniforms.feedback, 0.66 + Math.min(0.18, features.energy * 0.18));
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(displayProgram);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(displayPosition);
+  gl.vertexAttribPointer(displayPosition, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, write.texture);
+  gl.uniform1i(displayUniforms.scene, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  feedback.readIndex = writeIndex;
 }
 
 function drawRing(width, height, features) {
