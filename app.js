@@ -62,6 +62,7 @@ const translations = {
     modeSkyChamber: "光域天窗",
     modeBoiling: "沸点字浪",
     modeErosion: "侵蚀流域",
+    modeSeascape: "海面光景",
     themeAurora: "极光",
     themeEmber: "炽热",
     themeMono: "黑金",
@@ -124,6 +125,7 @@ const translations = {
     modeSkyChamber: "Sky Chamber",
     modeBoiling: "Boiling Type",
     modeErosion: "Erosion Flow",
+    modeSeascape: "Sea Light",
     themeAurora: "Aurora",
     themeEmber: "Ember",
     themeMono: "Black Gold",
@@ -229,6 +231,7 @@ let knownDuration = 0;
 let currentLanguage = "zh";
 let dragDepth = 0;
 let webglState;
+let seascapeState;
 let webglSupported = true;
 const tuningDefaults = {
   size: 1,
@@ -339,6 +342,16 @@ const modeTuningConfigs = {
     { key: "saturation", zh: "沉积色彩", en: "Sediment Color", min: 0.35, max: 1.8, step: 0.05 },
     { key: "sharpness", zh: "侵蚀锐度", en: "Erosion Sharpness", min: 0.35, max: 1.8, step: 0.05 },
     { key: "vibration", zh: "律动侵蚀", en: "Rhythmic Erosion", min: 0, max: 2.4, step: 0.05 },
+  ],
+  seascape: [
+    { key: "size", zh: "镜头距离", en: "Camera Distance", min: 0.65, max: 1.65, step: 0.05 },
+    { key: "density", zh: "浪纹细节", en: "Wave Detail", min: 0.45, max: 2.2, step: 0.05 },
+    { key: "line", zh: "浪尖锐度", en: "Wave Choppiness", min: 0.45, max: 2.5, step: 0.05 },
+    { key: "gradient", zh: "天空渐变", en: "Sky Gradient", min: 0.4, max: 1.8, step: 0.05 },
+    { key: "saturation", zh: "海水色彩", en: "Water Color", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "sharpness", zh: "反光锐度", en: "Specular Sharpness", min: 0.35, max: 1.8, step: 0.05 },
+    { key: "vibration", zh: "浪高律动", en: "Wave Energy", min: 0, max: 2.4, step: 0.05 },
+    { key: "hue", zh: "海面色相", en: "Sea Hue", min: -180, max: 180, step: 5 },
   ],
 };
 let visualTuning = { ...tuningDefaults };
@@ -495,8 +508,9 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   webglCanvas.width = canvas.width;
   webglCanvas.height = canvas.height;
-  if (webglState?.gl) {
-    webglState.gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  const gl = webglState?.gl || seascapeState?.gl;
+  if (gl) {
+    gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
     resetErosionFeedback();
   }
 }
@@ -700,6 +714,205 @@ void main() {
 }
 `;
 
+const seascapeFragmentShader = `
+precision highp float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_treble;
+uniform float u_energy;
+uniform float u_beat;
+uniform vec3 u_theme;
+uniform float u_scale;
+uniform float u_density;
+uniform float u_gradient;
+uniform float u_saturation;
+uniform float u_sharpness;
+uniform float u_line;
+
+const int TRACE_STEPS = 28;
+const float PI = 3.14159265359;
+const mat2 OCTAVE_M = mat2(1.62, 1.18, -1.18, 1.62);
+
+mat3 fromEuler(vec3 ang) {
+  vec2 a1 = vec2(sin(ang.x), cos(ang.x));
+  vec2 a2 = vec2(sin(ang.y), cos(ang.y));
+  vec2 a3 = vec2(sin(ang.z), cos(ang.z));
+  mat3 m;
+  m[0] = vec3(a1.y * a3.y + a1.x * a2.x * a3.x, a1.y * a2.x * a3.x + a3.y * a1.x, -a2.y * a3.x);
+  m[1] = vec3(-a2.y * a1.x, a1.y * a2.y, a2.x);
+  m[2] = vec3(a3.y * a1.x * a2.x + a1.y * a3.x, a1.x * a3.x - a1.y * a3.y * a2.x, a2.y * a3.y);
+  return m;
+}
+
+float hash(vec2 p) {
+  float h = dot(p, vec2(127.1, 311.7));
+  return fract(sin(h) * 43758.5453123);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return -1.0 + 2.0 * mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+float diffuse(vec3 n, vec3 l, float p) {
+  return pow(dot(n, l) * 0.4 + 0.6, p);
+}
+
+float specular(vec3 n, vec3 l, vec3 e, float s) {
+  float nrm = (s + 8.0) / (PI * 8.0);
+  return pow(max(dot(reflect(e, n), l), 0.0), s) * nrm;
+}
+
+vec3 skyColor(vec3 e) {
+  float y = (max(e.y, 0.0) * 0.75 + 0.2) * (0.75 + u_gradient * 0.16);
+  vec3 dawn = hsv2rgb(vec3(u_theme.z, 0.36 + u_mid * 0.18, 0.5));
+  vec3 zenith = hsv2rgb(vec3(u_theme.x + 0.08, 0.42, 0.1 + u_energy * 0.04));
+  vec3 horizon = hsv2rgb(vec3(u_theme.y, 0.5, 0.72 + u_beat * 0.08));
+  vec3 color = mix(horizon, zenith, smoothstep(0.08, 1.0, y));
+  color = mix(color, dawn, pow(1.0 - y, 2.0) * 0.48 * u_gradient);
+  return color;
+}
+
+float seaOctave(vec2 uv, float choppy) {
+  uv += noise(uv);
+  vec2 wv = 1.0 - abs(sin(uv));
+  vec2 swv = abs(cos(uv));
+  wv = mix(wv, swv, wv);
+  return pow(1.0 - pow(wv.x * wv.y, 0.65), choppy);
+}
+
+float seaHeight(vec3 p, int detail) {
+  float freq = 0.135 * max(u_density, 0.2);
+  float amp = 0.42 + u_bass * 0.36 + u_energy * 0.12;
+  float choppy = 1.8 + u_line * 2.35 + u_treble * 1.1;
+  float seaTime = 1.0 + u_time * (0.62 + u_mid * 0.35);
+  vec2 uv = p.xz;
+  uv.x *= 0.78;
+
+  float h = 0.0;
+  for (int i = 0; i < 5; i++) {
+    if (i >= detail) break;
+    float d = seaOctave((uv + seaTime) * freq, choppy);
+    d += seaOctave((uv - seaTime * 0.92) * freq, choppy);
+    h += d * amp;
+    uv = OCTAVE_M * uv;
+    freq *= 1.88;
+    amp *= 0.23;
+    choppy = mix(choppy, 1.0, 0.2);
+  }
+  return h;
+}
+
+float mapSea(vec3 p) {
+  return p.y - seaHeight(p, 3);
+}
+
+float mapSeaDetailed(vec3 p) {
+  return p.y - seaHeight(p, 5);
+}
+
+vec3 seaNormal(vec3 p, float eps) {
+  vec3 n;
+  n.y = mapSeaDetailed(p);
+  n.x = mapSeaDetailed(vec3(p.x + eps, p.y, p.z)) - n.y;
+  n.z = mapSeaDetailed(vec3(p.x, p.y, p.z + eps)) - n.y;
+  n.y = eps;
+  return normalize(n);
+}
+
+float traceHeight(vec3 ori, vec3 dir, out vec3 p) {
+  float tm = 0.0;
+  float tx = 800.0;
+  float hx = mapSea(ori + dir * tx);
+  if (hx > 0.0) {
+    p = ori + dir * tx;
+    return tx;
+  }
+  float hm = mapSea(ori);
+  for (int i = 0; i < TRACE_STEPS; i++) {
+    float tmid = mix(tm, tx, hm / (hm - hx));
+    p = ori + dir * tmid;
+    float hmid = mapSea(p);
+    if (hmid < 0.0) {
+      tx = tmid;
+      hx = hmid;
+    } else {
+      tm = tmid;
+      hm = hmid;
+    }
+    if (abs(hmid) < 0.001) break;
+  }
+  return mix(tm, tx, hm / (hm - hx));
+}
+
+vec3 seaColor(vec3 p, vec3 n, vec3 light, vec3 eye, vec3 dist) {
+  float fresnel = clamp(1.0 - dot(n, -eye), 0.0, 1.0);
+  fresnel = min(fresnel * fresnel * fresnel, 0.55);
+
+  vec3 reflected = skyColor(reflect(eye, n));
+  vec3 deep = hsv2rgb(vec3(u_theme.x + 0.04, 0.72, 0.08 + u_energy * 0.04));
+  vec3 foam = hsv2rgb(vec3(u_theme.z, 0.42, 0.58 + u_treble * 0.18));
+  vec3 water = deep + diffuse(n, light, 72.0) * foam * 0.12;
+  vec3 color = mix(water, reflected, fresnel);
+
+  float atten = max(1.0 - dot(dist, dist) * 0.001, 0.0);
+  color += foam * (p.y - 0.45) * 0.16 * atten;
+  color += foam * specular(n, light, eye, 320.0 * u_sharpness * inversesqrt(max(dot(dist, dist), 0.01))) * (0.55 + u_beat * 0.45);
+  return color;
+}
+
+vec3 renderPixel(vec2 coord) {
+  vec2 uv = coord / u_resolution.xy;
+  uv = uv * 2.0 - 1.0;
+  uv.x *= u_resolution.x / u_resolution.y;
+  uv /= max(u_scale, 0.25);
+
+  float cameraBeat = u_beat * 0.035;
+  float time = u_time * 0.28;
+  vec3 ang = vec3(
+    sin(time * 3.0) * 0.05 + cameraBeat,
+    sin(time) * 0.1 + 0.24 + u_mid * 0.05,
+    time + u_bass * 0.04
+  );
+  vec3 ori = vec3(0.0, 3.2 + u_bass * 0.6, u_time * (3.0 + u_mid * 1.6));
+  vec3 dir = normalize(vec3(uv.xy, -2.05));
+  dir.z += length(uv) * (0.09 + u_energy * 0.04);
+  dir = normalize(fromEuler(ang) * dir);
+
+  vec3 p;
+  traceHeight(ori, dir, p);
+  vec3 dist = p - ori;
+  vec3 n = seaNormal(p, dot(dist, dist) * (0.08 / max(u_resolution.x, 1.0)));
+  vec3 light = normalize(vec3(-0.18, 1.0, 0.72));
+  float horizon = pow(smoothstep(0.0, -0.02, dir.y), 0.2);
+  return mix(skyColor(dir), seaColor(p, n, light, dir, dist), horizon);
+}
+
+void main() {
+  vec3 color = renderPixel(gl_FragCoord.xy);
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, u_saturation);
+  color = mix(vec3(0.5), color, 0.72 + u_sharpness * 0.22);
+  color = color / (color + vec3(0.74));
+  color = pow(max(color, vec3(0.0)), vec3(0.72));
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -809,6 +1022,94 @@ function drawErosionFlow(features) {
   gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
   gl.uniform1f(uniforms.line, visualTuning.line);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function initSeascapeWebgl() {
+  if (seascapeState || !webglSupported) return seascapeState;
+  const gl = webglCanvas.getContext("webgl", {
+    antialias: false,
+    alpha: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    webglSupported = false;
+    return null;
+  }
+
+  try {
+    const program = createProgram(gl, erosionVertexShader, seascapeFragmentShader);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    seascapeState = {
+      gl,
+      program,
+      buffer,
+      position: gl.getAttribLocation(program, "a_position"),
+      uniforms: {
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        time: gl.getUniformLocation(program, "u_time"),
+        bass: gl.getUniformLocation(program, "u_bass"),
+        mid: gl.getUniformLocation(program, "u_mid"),
+        treble: gl.getUniformLocation(program, "u_treble"),
+        energy: gl.getUniformLocation(program, "u_energy"),
+        beat: gl.getUniformLocation(program, "u_beat"),
+        theme: gl.getUniformLocation(program, "u_theme"),
+        scale: gl.getUniformLocation(program, "u_scale"),
+        density: gl.getUniformLocation(program, "u_density"),
+        gradient: gl.getUniformLocation(program, "u_gradient"),
+        saturation: gl.getUniformLocation(program, "u_saturation"),
+        sharpness: gl.getUniformLocation(program, "u_sharpness"),
+        line: gl.getUniformLocation(program, "u_line"),
+      },
+    };
+  } catch (error) {
+    console.error(error);
+    webglSupported = false;
+    return null;
+  }
+
+  return seascapeState;
+}
+
+function drawSeascape(features) {
+  const state = initSeascapeWebgl();
+  if (!state) return;
+  const { gl, program, buffer, position, uniforms } = state;
+  const theme = tunedTheme();
+  const sensitivity = Number(sensitivityInput.value);
+  gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform2f(uniforms.resolution, webglCanvas.width, webglCanvas.height);
+  gl.uniform1f(uniforms.time, frame / 60);
+  gl.uniform1f(uniforms.bass, Math.min(1, features.bass * sensitivity));
+  gl.uniform1f(uniforms.mid, Math.min(1, features.mid * sensitivity));
+  gl.uniform1f(uniforms.treble, Math.min(1, features.treble * sensitivity));
+  gl.uniform1f(uniforms.energy, Math.min(1, features.energy * sensitivity));
+  gl.uniform1f(uniforms.beat, features.beat);
+  gl.uniform3f(uniforms.theme, (theme.base % 360) / 360, (theme.second % 360) / 360, (theme.third % 360) / 360);
+  gl.uniform1f(uniforms.scale, visualTuning.size);
+  gl.uniform1f(uniforms.density, visualTuning.density);
+  gl.uniform1f(uniforms.gradient, visualTuning.gradient);
+  gl.uniform1f(uniforms.saturation, visualTuning.saturation);
+  gl.uniform1f(uniforms.sharpness, visualTuning.sharpness);
+  gl.uniform1f(uniforms.line, visualTuning.line);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function isWebglModeName(mode) {
+  return mode === "erosion" || mode === "seascape";
 }
 
 function drawRing(width, height, features) {
@@ -1910,13 +2211,14 @@ function render() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
   const features = tunedFeatures(audioFeatures());
-  const isWebglMode = currentMode === "erosion";
+  const isWebglMode = isWebglModeName(currentMode);
 
   document.body.classList.toggle("webgl-mode", isWebglMode);
 
   if (isWebglMode) {
     ctx.clearRect(0, 0, width, height);
-    drawErosionFlow(features);
+    if (currentMode === "erosion") drawErosionFlow(features);
+    if (currentMode === "seascape") drawSeascape(features);
     requestAnimationFrame(render);
     return;
   }
@@ -2247,8 +2549,8 @@ modeButtons.forEach((button) => {
     button.classList.add("active");
     currentMode = button.dataset.mode;
     renderTuningPanel();
-    document.body.classList.toggle("webgl-mode", currentMode === "erosion");
-    if (currentMode === "erosion") resetErosionFeedback();
+    document.body.classList.toggle("webgl-mode", isWebglModeName(currentMode));
+    if (isWebglModeName(currentMode)) resetErosionFeedback();
   });
 });
 
@@ -2274,7 +2576,7 @@ recordButton.addEventListener("click", () => {
     return;
   }
 
-  const captureCanvas = currentMode === "erosion" ? webglCanvas : canvas;
+  const captureCanvas = isWebglModeName(currentMode) ? webglCanvas : canvas;
 
   if (!window.MediaRecorder || !captureCanvas.captureStream) {
     setStatus("unsupportedRecord");
